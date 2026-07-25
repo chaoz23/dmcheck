@@ -1,0 +1,5 @@
+{"ts": 1700000020, "type": "turn", "actor": "Bram"}
+{"ts": 1700000095, "type": "act", "actor": "Bram", "text": "Bram scouts the square"}
+{"ts": 1700000550, "type": "turn", "actor": "Mira"}
+{"ts": 1700000560, "type": "act", "actor": "Bram", "text": "Bram acts during Mira's turn"}
+{"ts": 1700000800, "type": "event", "text": "guard drops to 0 HP"}

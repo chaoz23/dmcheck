@@ -1,0 +1,15 @@
+{
+  "charter_version": "1.0",
+  "description": "Default table charter, derived from the Agent Table Protocol. Every threshold is a table norm you may override.",
+  "gm": [],
+  "dice_authors": ["Dice Maiden", "Avrae", "dicecord"],
+  "ooc_markers": ["[OOC]", "((", "//"],
+  "hidden_terms": [],
+  "thresholds": {
+    "answer_within_messages": 6,
+    "roll_ack_within_messages": 4,
+    "dead_air_seconds": 300,
+    "cue_within_gm_messages": 3
+  },
+  "rules_enabled": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
+}

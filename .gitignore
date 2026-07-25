@@ -1,0 +1,9 @@
+.claude/
+outputs/
+work/
+tmp/
+*.local.*
+__pycache__/
+*.egg-info/
+dist/
+.venv/

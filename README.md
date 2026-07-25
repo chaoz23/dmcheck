@@ -1,0 +1,72 @@
+# dmcheck
+
+**Deterministic conduct verdicts for live tabletop sessions — CI for running a game.**
+
+Feed it a session transcript (and optionally an engine event ledger) plus a **table charter**, and it returns named findings — the player whose question was never answered, the dice roll nobody acknowledged, the turn that began without anyone being told, the spoiler that leaked into the channel, the five-minute dead air. Every finding cites the charter rule it violates, with the evidence attached.
+
+> **The design contract:** a false accusation is the unforgivable bug. A rule fires only when the transcript *provably* shows the violation — ambiguity produces silence, never noise. The verdict path is model-free and deterministic: same transcript, same findings, every time.
+
+## 30 seconds to a refereed session
+
+```console
+$ pip install dmcheck          # stdlib only, no dependencies
+$ dmcheck run session.jsonl --gm "Greta"
+{
+ "messages": 9,
+ "findings": [
+  {"rule": "R2", "summary": "unconsumed-roll: a dice result was never followed by any GM message",
+   "charter": "roll_ack_within_messages=4",
+   "detail": "dice result from DiceBot never followed by a GM message",
+   "evidence": {"index": 6, "author": "DiceBot", "content": "Bram rolls 1d20+4: [18] = 22"}},
+  ...
+ ],
+ "counts": {"R1": 1, "R2": 1, "R6": 1, "R7": 1, "R8": 1}
+}
+```
+
+Transcript formats: JSONL of `{ts, author, content}`, or a JSON array of Discord-API-shaped messages (`{timestamp, author: {username}, content}`) in either order.
+
+## The rule set (each one paid for by a real table failure)
+
+| Rule | Fires when | Origin story |
+|---|---|---|
+| R1 | a player's question got no GM response within threshold | a player asked the DM a lore question; another *player* ended up answering |
+| R2 | a dice result was never followed by any GM message | "did I hit?" — a player's successful attack roll sat unacknowledged |
+| R3 | an engine event was never narrated to the table | the state engine resolved a hit the table never heard about |
+| R4 | a turn began and the GM never addressed the actor by name | "isn't it her turn?" — asked by a player, which is one player too many |
+| R5 | someone acted out of initiative (needs the ledger) | engine rejected it silently; the table never knew |
+| R6 | a configured hidden term appeared in a GM message | a module's secret state names leaked into narration |
+| R7 | GM dead air beyond threshold while a player waited | 30 seconds reads as thinking; five minutes reads as absence |
+| R8 | the session ended with open R1–R3 findings in its tail | sessions should end in a defined state — that's what makes the next one possible |
+
+These came from running a hybrid table — human and AI players, an AI GM — on Discord, where every one of these failures actually happened and got codified the same week. They apply equally to human GMs: run dmcheck over your own exported game log and see what your table's transcript says.
+
+## The charter is config, not code
+
+`charters/default.json` ships thresholds and conventions derived from a real table's protocol. Override any of it — cue conventions, dead-air tolerance, dice-bot names, hidden-term lists — and version it. A league or organized-play program could publish a charter the way they publish a player's guide; dmcheck then referees any table against it.
+
+```console
+$ dmcheck run session.jsonl --charter our-table.json --ledger events.jsonl
+$ dmcheck rules            # the rule set with definitions
+$ dmcheck --schema         # machine-readable I/O contract
+```
+
+## For agents
+
+- `tool.json` at the repo root; `--schema`; exit codes: `0` clean · `1` findings · `2` charter/input unusable.
+- MCP server: `dmcheck-mcp` (stdio) with tools `run` and `rules`.
+- Findings are structured JSON with rule id, charter citation, human-readable detail, and an evidence span — built to be consumed by a GM agent that fixes its own procedure between beats.
+
+## What it does NOT do (on purpose)
+
+- **No rules adjudication** — whether the attack was *legal* is [srdcheck](https://github.com/chaoz23/srdcheck)'s job.
+- **No character math** — that's [charactercheck](https://github.com/chaoz23/charactercheck). (srdcheck judges the rules, charactercheck derives the actor, dmcheck referees the table.)
+- **No narrative-quality judging** — whether the prose was *good* is taste, and taste is not checkable. dmcheck checks procedure only.
+- **No model calls, no scores** — deterministic findings per rule, never a blended "DM grade."
+
+## Credits
+
+The rule set was distilled from live hybrid (human + AI) table sessions; the Router+Detector pattern in [native-gaming-harness](https://github.com/TinkerChen01/native-gaming-harness) independently converged on the same idea, which we take as evidence it's the load-bearing piece. dmcheck is game-system-agnostic and unaffiliated with any publisher.
+
+<!-- MCP registry ownership marker (do not remove): binds this repo's PyPI package to its registry namespace. -->
+mcp-name: io.github.chaoz23/dmcheck

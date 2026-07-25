@@ -1,0 +1,14 @@
+{
+  "name": "dmcheck",
+  "version": "0.1.0",
+  "description": "Deterministic conduct verdicts for live tabletop sessions. Input: a session transcript (JSONL {ts,author,content} or Discord-API JSON array), an optional engine ledger, and a versioned table charter. Output: findings that cite the violated charter rule with evidence. False accusations are the unforgivable bug: ambiguity produces silence.",
+  "install": "pip install dmcheck  (or: uvx dmcheck ...)",
+  "commands": {
+    "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f]": "referee the session; findings as JSON",
+    "dmcheck rules": "the rule set (R1-R8) with definitions",
+    "dmcheck --schema": "machine-readable I/O contract"
+  },
+  "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
+  "mcp": {"command": "dmcheck-mcp", "tools": ["run", "rules"]},
+  "boundaries": "Table PROCEDURE only: no rules adjudication (srdcheck), no character math (charactercheck), no narrative-quality judging (taste is not checkable), no model calls anywhere."
+}

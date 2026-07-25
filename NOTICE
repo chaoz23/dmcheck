@@ -1,0 +1,8 @@
+dmcheck
+
+Independent implementation. The rule set was derived from live hybrid
+(human + AI agent) tabletop sessions run by the project owner; the
+Router+Detector pattern in TinkerChen01/native-gaming-harness independently
+validates the approach (no code consulted or copied). dmcheck judges table
+procedure only — it contains no game content and no affiliation with any
+game publisher.

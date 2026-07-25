@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dmcheck"
+version = "0.1.0"
+description = "Deterministic conduct verdicts for live tabletop sessions — CI for running a game. Findings cite the table charter; ambiguity produces silence, never accusations."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "chaoz23"}]
+keywords = ["ttrpg", "dnd", "game-master", "lint", "agents", "mcp", "deterministic"]
+
+[project.urls]
+Homepage = "https://github.com/chaoz23/dmcheck"
+
+[project.scripts]
+dmcheck = "dmcheck.cli:main"
+dmcheck-mcp = "dmcheck.mcp:main"
+
+[tool.setuptools]
+packages = ["dmcheck"]
+
+[tool.setuptools.package-data]
+dmcheck = ["default_charter.json"]
