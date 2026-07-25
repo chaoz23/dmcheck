@@ -43,6 +43,31 @@ Transcript formats: JSONL of `{ts, author, content}`, or a JSON array of Discord
 
 These came from running a hybrid table — human and AI players, an AI GM — on Discord, where every one of these failures actually happened and got codified the same week. They apply equally to human GMs: run dmcheck over your own exported game log and see what your table's transcript says.
 
+## Live mode (0.2): the referee sits AT the table
+
+`dmcheck watch` runs the same engine over a *growing* session — stdin JSONL or a
+tailed file — and emits lifecycle events: **OPEN** when a violation becomes
+provable (thresholds fully elapsed; no predictions, ever), **RESOLVED** when a
+living condition heals (the engine event finally got narrated). `--notify-cmd`
+fires your own hook per OPEN finding — dmcheck itself never posts anywhere.
+At session end a closed-mode pass runs, so watch's final state provably equals
+`dmcheck run` on the full transcript (tested).
+
+```console
+$ your-chat-fetcher | dmcheck watch - --gm "Rob" --notify-cmd 'notify-dm.sh'
+{"event": "open", "rule": "R2", "detail": "dice result from RollBot never followed by a GM message", ...}
+{"event": "resolved", "rule": "R3", ...}
+{"event": "session_end", "open": ["R1"], "open_count": 1}
+$ dmcheck explain R2            # the rule, its charter knobs, and the table failure that earned it
+$ dmcheck lint-charter my.json  # unknown keys / bad thresholds refuse loudly
+```
+
+The point of live: every failure the rules encode was recoverable in the
+moment it happened — the unanswered question, the stale roll, the missing cue
+all had a seconds-wide window where a nudge saved the beat. Post-hoc tells you
+what went wrong last night; watch taps the GM's shoulder before the player
+feels it.
+
 ## The charter is config, not code
 
 `charters/default.json` ships thresholds and conventions derived from a real table's protocol. Override any of it — cue conventions, dead-air tolerance, dice-bot names, hidden-term lists — and version it. A league or organized-play program could publish a charter the way they publish a player's guide; dmcheck then referees any table against it.

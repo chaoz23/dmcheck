@@ -134,7 +134,7 @@ def _word_in(term, text):
 
 # ---------- the rules ----------
 
-def check(transcript, charter, ledger=None):
+def check(transcript, charter, ledger=None, closed=True, now=None):
     ch = charter
     ledger = ledger or []
     T = transcript
@@ -154,7 +154,8 @@ def check(transcript, charter, ledger=None):
             if _is_gm(r, ch) or _is_dice(r, ch) or "?" not in r["content"]:
                 continue
             window = [x for x in T[r["i"] + 1: r["i"] + 1 + n]]
-            if window and not any(_is_gm(x, ch) for x in window):
+            complete = len(window) >= n or closed
+            if window and complete and not any(_is_gm(x, ch) for x in window):
                 findings.append(_finding(
                     "R1", f"answer_within_messages={n}",
                     f"question from {r['author']} got no GM response within {n} messages",
@@ -168,8 +169,10 @@ def check(transcript, charter, ledger=None):
             if not _is_dice(r, ch):
                 continue
             window = T[r["i"] + 1: r["i"] + 1 + n]
-            tail_is_end = r["i"] + 1 + n > len(T)
-            if not any(_is_gm(x, ch) for x in window) and (window or tail_is_end):
+            tail_is_end = closed and (r["i"] + 1 + n > len(T))
+            complete = len(window) >= n or closed
+            if not any(_is_gm(x, ch) for x in window) \
+                    and ((window and complete) or tail_is_end):
                 findings.append(_finding(
                     "R2", f"roll_ack_within_messages={n}",
                     f"dice result from {r['author']} never followed by a GM message",
@@ -237,16 +240,19 @@ def check(transcript, charter, ledger=None):
             if _is_gm(r, ch) or _is_dice(r, ch) or _is_ooc(r, ch) or r["ts"] is None:
                 continue
             nxt = next((x for x in T[r["i"] + 1:] if _is_gm(x, ch) and x["ts"]), None)
-            if nxt and (nxt["ts"] - r["ts"]) > limit:
+            gap = (nxt["ts"] - r["ts"]) if nxt else \
+                  ((now - r["ts"]) if (now is not None and not closed) else None)
+            if gap is not None and gap > limit:
                 findings.append(_finding(
                     "R7", f"dead_air_seconds={limit}",
-                    f"GM took {int(nxt['ts'] - r['ts'])}s to respond after "
-                    f"{r['author']}'s message",
+                    (f"GM took {int(gap)}s to respond after "
+                     if nxt else f"GM silent for {int(gap)}s (ongoing) after ")
+                    + f"{r['author']}'s message",
                     _excerpt(r)))
 
     # R8 unresolved-session-end: open R1/R2/R3 findings whose evidence sits in
     # the final quarter of the transcript.
-    if "R8" in enabled and findings and T:
+    if "R8" in enabled and closed and findings and T:
         tail_start = len(T) * 3 // 4
         open_tail = [f for f in findings if f["rule"] in ("R1", "R2", "R3")
                      and f["evidence"].get("index", len(T)) >= tail_start]

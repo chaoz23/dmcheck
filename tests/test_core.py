@@ -61,3 +61,62 @@ class TestGuards(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLiveMode(unittest.TestCase):
+    """v0.2: D1 under liveness — nothing opens until provable; run == watch(closed)."""
+
+    def _msgs(self, path):
+        return load_transcript(os.path.join(FIX, path))
+
+    def test_open_mode_holds_fire_until_window_complete(self):
+        """A dice roll as the LAST message must NOT open R2 live (window not
+        elapsed) — but MUST fire once the session closes."""
+        ch = load_charter(CH)
+        msgs = self._msgs("clean-session.jsonl")[:5]   # ends on the DiceBot roll
+        open_f, _ = check(msgs, ch, closed=False)
+        self.assertEqual([f for f in open_f if f["rule"] == "R2"], [])
+        closed_f, _ = check(msgs, ch, closed=True)
+        self.assertTrue(any(f["rule"] == "R2" for f in closed_f))
+
+    def test_r7_fires_from_wall_clock_silence(self):
+        """Dead air is provable by TIME passing with no message at all."""
+        ch = load_charter(CH)
+        msgs = self._msgs("clean-session.jsonl")[:2]   # ends on Bram's question
+        t_last = msgs[-1]["ts"]
+        quiet, _ = check(msgs, ch, closed=False, now=t_last + 100)
+        self.assertFalse(any(f["rule"] == "R7" for f in quiet))
+        loud, _ = check(msgs, ch, closed=False, now=t_last + 400)
+        self.assertTrue(any("ongoing" in f["detail"] for f in loud if f["rule"] == "R7"))
+
+    def test_watcher_final_state_equals_run(self):
+        from dmcheck.watch import Watcher
+        ch = load_charter(CH)
+        events = []
+        w = Watcher(ch, load_ledger(os.path.join(FIX, "messy-ledger.jsonl")),
+                    emit=events.append)
+        for m in self._msgs("messy-session.jsonl"):
+            w.feed(m, now=m["ts"])
+        code = w.close()
+        self.assertEqual(code, 1)
+        final_rules = sorted({f["rule"] for f in w.open.values()})
+        run_f, _ = check(self._msgs("messy-session.jsonl"), ch,
+                         load_ledger(os.path.join(FIX, "messy-ledger.jsonl")),
+                         closed=True)
+        self.assertEqual(final_rules, sorted({f["rule"] for f in run_f}))
+        self.assertTrue(any(e["event"] == "session_end" for e in events))
+
+    def test_r3_heals_when_narrated(self):
+        """The living rule: an unnarrated engine event resolves when the GM
+        finally tells the table."""
+        from dmcheck.watch import Watcher
+        ch = load_charter(CH)
+        ledger = [{"ts": 1700000200, "type": "event", "text": "guard drops"}]
+        events = []
+        w = Watcher(ch, ledger, emit=events.append)
+        w.feed({"ts": 1700000100, "author": "Greta", "content": "The fight rages."})
+        w.tick(now=1700000300)
+        self.assertTrue(any(e["event"] == "open" and e["rule"] == "R3" for e in events))
+        w.feed({"ts": 1700000400, "author": "Greta",
+                "content": "The guard drops in a heap!"}, now=1700000401)
+        self.assertTrue(any(e["event"] == "resolved" and e["rule"] == "R3" for e in events))
