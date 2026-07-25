@@ -1,0 +1,33 @@
+{
+ "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+ "name": "io.github.chaoz23/dmcheck",
+ "description": "Deterministic conduct verdicts for live tabletop sessions - CI for running a game.",
+ "version": "0.1.0",
+ "repository": {
+  "url": "https://github.com/chaoz23/dmcheck",
+  "source": "github"
+ },
+ "packages": [
+  {
+   "registryType": "pypi",
+   "registryBaseUrl": "https://pypi.org",
+   "identifier": "dmcheck",
+   "version": "0.1.0",
+   "runtimeHint": "uvx",
+   "runtimeArguments": [
+    {
+     "type": "named",
+     "name": "--from",
+     "value": "dmcheck"
+    },
+    {
+     "type": "positional",
+     "value": "dmcheck-mcp"
+    }
+   ],
+   "transport": {
+    "type": "stdio"
+   }
+  }
+ ]
+}
