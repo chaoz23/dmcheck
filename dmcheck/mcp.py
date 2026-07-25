@@ -51,7 +51,7 @@ def main():
                 resp["result"] = {
                     "protocolVersion": req.get("params", {}).get("protocolVersion", "2024-11-05"),
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "dmcheck", "version": "0.1.0"}}
+                    "serverInfo": {"name": "dmcheck", "version": "0.1.1"}}
             elif method == "notifications/initialized":
                 continue
             elif method == "tools/list":

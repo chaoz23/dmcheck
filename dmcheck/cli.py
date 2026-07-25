@@ -10,6 +10,7 @@ SCHEMA = {
     "commands": {
         "run": "check a transcript (+ optional --ledger) against a charter; findings as JSON",
         "rules": "list the rule set with one-line definitions",
+        "charter": "print the effective charter (defaults or --charter file) — copy, edit, version it",
     },
     "transcript": "JSONL of {ts, author, content} OR a JSON array of Discord-API-shaped messages",
     "ledger": "optional JSONL of {ts, type: turn|act|event, actor?, text?}",
@@ -20,13 +21,14 @@ SCHEMA = {
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="dmcheck", description=__doc__)
-    ap.add_argument("command", nargs="?", choices=["run", "rules"], default="run")
+    ap.add_argument("command", nargs="?", choices=["run", "rules", "charter"], default="run")
     ap.add_argument("transcript", nargs="?")
     ap.add_argument("--charter", help="charter JSON (default: packaged default)")
     ap.add_argument("--ledger", help="optional engine-event ledger JSONL")
-    ap.add_argument("--gm", action="append", help="GM author name (repeatable; overrides charter.gm)")
+    ap.add_argument("--gm", action="append", help="GM author name (repeatable; OVERRIDES charter.gm)")
+    ap.add_argument("--dice-bot", action="append", help="dice-bot author name (repeatable; overrides charter.dice_authors)")
     ap.add_argument("--schema", action="store_true")
-    ap.add_argument("--version", action="version", version="dmcheck 0.1.0")
+    ap.add_argument("--version", action="version", version="dmcheck 0.1.1")
     a = ap.parse_args(argv)
 
     if a.schema:
@@ -35,12 +37,17 @@ def main(argv=None):
     if a.command == "rules":
         print(json.dumps(RULES, indent=1))
         return 0
+    if a.command == "charter":
+        print(json.dumps(load_charter(a.charter), indent=1))
+        return 0
     if not a.transcript:
         ap.error("a transcript file is required")
     try:
         ch = load_charter(a.charter)
         if a.gm:
             ch["gm"] = a.gm
+        if a.dice_bot:
+            ch["dice_authors"] = a.dice_bot
         transcript = load_transcript(a.transcript)
         ledger = load_ledger(a.ledger)
     except (OSError, ValueError, json.JSONDecodeError) as e:

@@ -4,6 +4,8 @@
 
 Feed it a session transcript (and optionally an engine event ledger) plus a **table charter**, and it returns named findings — the player whose question was never answered, the dice roll nobody acknowledged, the turn that began without anyone being told, the spoiler that leaked into the channel, the five-minute dead air. Every finding cites the charter rule it violates, with the evidence attached.
 
+> **Cold-boot probe (2026-07-24):** a fresh agent session given only this repo URL installed and refereed a session in **2 commands**, verified all three exit-code legs against the docs, and confirmed the no-false-accusation contract held (a consumed roll produced silence). Its friction notes shipped as 0.1.1 (`--dice-bot`, `dmcheck charter`).
+>
 > **The design contract:** a false accusation is the unforgivable bug. A rule fires only when the transcript *provably* shows the violation — ambiguity produces silence, never noise. The verdict path is model-free and deterministic: same transcript, same findings, every time.
 
 ## 30 seconds to a refereed session
@@ -48,6 +50,8 @@ These came from running a hybrid table — human and AI players, an AI GM — on
 ```console
 $ dmcheck run session.jsonl --charter our-table.json --ledger events.jsonl
 $ dmcheck rules            # the rule set with definitions
+$ dmcheck charter          # print the effective charter — copy, edit, version it
+$ dmcheck run session.jsonl --gm "Rob" --dice-bot "RollBot"   # quick overrides, no file needed
 $ dmcheck --schema         # machine-readable I/O contract
 ```
 

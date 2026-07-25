@@ -56,6 +56,7 @@ class TestGuards(unittest.TestCase):
         ch["gm"] = []
         findings, code = check(load_transcript(os.path.join(FIX, "clean-session.jsonl")), ch)
         self.assertEqual(code, 2)
+        self.assertIn("error", findings[0])
 
 
 if __name__ == "__main__":

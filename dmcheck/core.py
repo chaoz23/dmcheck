@@ -143,8 +143,8 @@ def check(transcript, charter, ledger=None):
     enabled = set(ch.get("rules_enabled", list(RULES)))
     gm_idx = [r["i"] for r in T if _is_gm(r, ch)]
     if not ch["gm"]:
-        return [_finding("R8", "charter.gm", "charter names no GM author — "
-                         "cannot referee; set charter.gm", {})], 2
+        return [{"error": "charter names no GM author — cannot referee; "
+                          "set charter.gm or pass --gm"}], 2
 
     # R1 unanswered-player: a non-GM, non-dice message containing a question,
     # with NO GM message in the next `answer_within_messages` messages.
