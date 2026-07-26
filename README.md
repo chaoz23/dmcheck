@@ -99,3 +99,34 @@ The rule set was distilled from live hybrid (human + AI) table sessions; the Rou
 
 <!-- MCP registry ownership marker (do not remove): binds this repo's PyPI package to its registry namespace. -->
 mcp-name: io.github.chaoz23/dmcheck
+
+
+## Bootstrap a new table (v0.3)
+
+```
+dmcheck init charter.json --gm YOUR-NAME
+```
+
+Writes a starter charter (versioned, effective-dated, lint-clean by
+construction) and prints the session-zero checklist S1–S8 — including S3c:
+sheet accountability is declared out loud at session zero, then settlement
+quizzes are graded silently. The referee that judges your table also hands
+you its constitution.
+
+**Per-seat cue policy (R4, hardened).** Agent seats behind mention-gated
+transports (e.g. Discord `allowBots="mentions"`) never receive name-in-prose
+cues. Declare it:
+
+```json
+"seats": {"Shalia": {"cue_requires_mention": true, "mention": "<@1493...>"}}
+```
+
+R4 then counts a cue **only** if the literal mention string is present.
+Origin: a live session where "Shalia — you're up" was posted, looked like a
+cue, and was provably undeliverable — R4 passed on it. Never again.
+
+**Ledger format (the declared standard).** dmcheck's ledger is JSONL:
+`{ts, type: turn|act|event, actor, text}` — one line per engine event. No
+lightweight OSS session-ledger existed when we surveyed (2026-07-26), so
+this format is the interchange standard our stack shares: engines tap their
+logs into it; `run`, `watch`, and settlement all consume it.
