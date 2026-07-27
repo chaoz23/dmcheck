@@ -21,13 +21,19 @@ def _fid(f):
 
 
 class Watcher:
-    def __init__(self, charter, ledger=None, notify_cmd=None, emit=None):
+    def __init__(self, charter, ledger=None, notify_cmd=None, emit=None,
+                 craft=False, scene="SOCIAL", pcs=()):
         self.ch = charter
         self.ledger = ledger or []
         self.notify_cmd = notify_cmd
         self.emit = emit or (lambda e: print(json.dumps(e), flush=True))
         self.messages = []
         self.open = {}
+        # v0.5.1 attention lane in the loop: advisory events, NEVER findings.
+        self.craft = craft
+        self.scene = scene
+        self.pcs = tuple(pcs)
+        self._last_notice = None
 
     def _evaluate(self, closed=False, now=None):
         findings, _ = check(self.messages, self.ch, self.ledger,
@@ -55,6 +61,20 @@ class Watcher:
         msg["i"] = len(self.messages)
         self.messages.append(msg)
         self._evaluate(closed=False, now=now if now is not None else time.time())
+        if self.craft and msg.get("author") in self.ch.get("gm", []):
+            from .craft import attention, hard_defects
+            beats = [m["content"] for m in self.messages
+                     if m.get("author") in self.ch["gm"]]
+            hd = hard_defects(msg.get("content", ""), self.pcs)
+            if hd:
+                self.emit({"event": "craft_defect", "beat": len(beats) - 1,
+                           "defects": hd, "advisory": True})
+            a = attention(beats, self.scene)
+            notice = a and a["notice"]
+            if notice != self._last_notice:   # resolve-and-move-on, no nagging
+                self._last_notice = notice
+                if a:
+                    self.emit({"event": "craft_attention", **a, "advisory": True})
 
     def tick(self, now=None):
         self._evaluate(closed=False, now=now if now is not None else time.time())
@@ -76,7 +96,9 @@ def watch_main(a):
     if a.dice_bot:
         ch["dice_authors"] = a.dice_bot
     ledger = load_ledger(a.ledger)
-    w = Watcher(ch, ledger, notify_cmd=a.notify_cmd)
+    w = Watcher(ch, ledger, notify_cmd=a.notify_cmd,
+                craft=getattr(a, "craft", False), scene=getattr(a, "scene", "SOCIAL"),
+                pcs=tuple(getattr(a, "pc", None) or []))
     try:
         if a.transcript == "-":
             for line in sys.stdin:

@@ -26,3 +26,18 @@ def test_report_has_no_score():
 def json_str(x):
     import json
     return json.dumps(x)
+
+
+def test_watch_emits_advisory_craft_events():
+    from dmcheck.watch import Watcher
+    ev = []
+    ch = {"gm": ["GM"], "dice_authors": [], "ooc_markers": [], "hidden_terms": [],
+          "thresholds": {}, "rules_enabled": [], "seats": {}}
+    w = Watcher(ch, craft=True, pcs=("Teodor",), emit=ev.append)
+    for k in range(4):
+        w.feed({"ts": k, "author": "GM", "content": "word " * 60}, now=k)
+    kinds = {e["event"] for e in ev}
+    assert "craft_attention" in kinds
+    assert all(e.get("advisory") for e in ev if e["event"].startswith("craft"))
+    n = sum(1 for e in ev if e["event"] == "craft_attention")
+    assert n == 1          # resolve-and-move-on: same notice never re-emitted

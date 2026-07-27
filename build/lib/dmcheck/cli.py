@@ -11,6 +11,7 @@ ORIGINS = {
     "R8": "sessions should end in a defined state — that's what makes the next one possible",
 }
 import argparse
+import os
 import json
 import sys
 
@@ -46,10 +47,12 @@ def main(argv=None):
     ap.add_argument("--schema", action="store_true")
     ap.add_argument("--follow", action="store_true", help="watch: keep tailing the file")
     ap.add_argument("--interval", type=float, default=5.0, help="watch: tick seconds")
+    ap.add_argument("--craft", action="store_true", help="watch: also emit advisory craft_attention/craft_defect events")
+    ap.add_argument("--dm", action="store_true", help="init: also write DM-CORE.md (the nine defaults + calibration pointer)")
     ap.add_argument("--scene", default="SOCIAL", help="craft: COMBAT|SOCIAL|EXPLORATION")
     ap.add_argument("--pc", action="append", help="craft: PC name (repeatable) for voiced-PC detection")
     ap.add_argument("--notify-cmd", help="watch: shell command fired per OPEN finding (finding JSON on stdin)")
-    ap.add_argument("--version", action="version", version="dmcheck 0.5.0")
+    ap.add_argument("--version", action="version", version="dmcheck 0.5.1")
     a = ap.parse_args(argv)
 
     if a.schema:
@@ -108,6 +111,10 @@ def main(argv=None):
         }
         with open(out, "w") as f:
             json.dump(charter, f, indent=1)
+        if a.dm:
+            core = os.path.join(os.path.dirname(__file__), "dm_core.md")
+            with open("DM-CORE.md", "w") as f:
+                f.write(open(core).read())
         print(json.dumps({
             "charter_written": out,
             "edit_first": ["gm (author names)", "players", "hidden_terms",
