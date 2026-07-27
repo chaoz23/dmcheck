@@ -150,3 +150,18 @@ R7 flagged 115 dead-air gaps of which ~5 were real.
 One narrowing, stated plainly: R1 no longer fires when another player answers
 in the GM's place — at a busy table that is textually indistinguishable from
 the banter that produced the false-accusation storm, and D1 chooses silence.
+
+## The attention lane (v0.5)
+
+```
+dmcheck craft session-beats.json --scene SOCIAL --pc Teodor --pc Shalia
+```
+
+Statistics, one attention signal, and categorical defects — **never a score**.
+Rates run against the professional envelope (134h, two DMs); `attention` is
+ONE scene-weighted signal with resolve-and-move-on, because a five-dial
+dashboard cost its author the metric he wasn't watching. Categorical
+detectors catch what rates structurally cannot: voicing a player's character,
+exposing the inference tree, deferring an adjudication, rolling for the
+player — all born from a live second-agent test. Advisory only: it reports,
+the DM decides, and overrides are expected exactly when the scene demands it.

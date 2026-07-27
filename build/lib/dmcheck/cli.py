@@ -22,6 +22,7 @@ SCHEMA = {
         "run": "check a transcript (+ optional --ledger) against a charter; findings as JSON",
         "rules": "list the rule set with one-line definitions",
         "charter": "print the effective charter (defaults or --charter file) — copy, edit, version it",
+        "craft": "attention lane: rate statistics vs the professional envelope, ONE attention signal, categorical defects (voiced-PC etc.) - advisory, never a score",
         "init": "bootstrap a new table: write a starter charter + print the session-zero checklist (S1-S8)",
         "watch": "live mode: incremental checking over a growing transcript (tail or stdin JSONL)",
         "lint-charter": "validate a charter file (unknown keys, bad thresholds, seat config)",
@@ -36,7 +37,7 @@ SCHEMA = {
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="dmcheck", description=__doc__)
-    ap.add_argument("command", nargs="?", choices=["run", "rules", "charter", "init", "watch", "lint-charter", "explain"], default="run")
+    ap.add_argument("command", nargs="?", choices=["run", "rules", "charter", "init", "watch", "lint-charter", "explain", "craft"], default="run")
     ap.add_argument("transcript", nargs="?")
     ap.add_argument("--charter", help="charter JSON (default: packaged default)")
     ap.add_argument("--ledger", help="optional engine-event ledger JSONL")
@@ -45,8 +46,10 @@ def main(argv=None):
     ap.add_argument("--schema", action="store_true")
     ap.add_argument("--follow", action="store_true", help="watch: keep tailing the file")
     ap.add_argument("--interval", type=float, default=5.0, help="watch: tick seconds")
+    ap.add_argument("--scene", default="SOCIAL", help="craft: COMBAT|SOCIAL|EXPLORATION")
+    ap.add_argument("--pc", action="append", help="craft: PC name (repeatable) for voiced-PC detection")
     ap.add_argument("--notify-cmd", help="watch: shell command fired per OPEN finding (finding JSON on stdin)")
-    ap.add_argument("--version", action="version", version="dmcheck 0.4.0")
+    ap.add_argument("--version", action="version", version="dmcheck 0.5.0")
     a = ap.parse_args(argv)
 
     if a.schema:
@@ -57,6 +60,26 @@ def main(argv=None):
         return 0
     if a.command == "charter":
         print(json.dumps(load_charter(a.charter), indent=1))
+        return 0
+    if a.command == "craft":
+        from .craft import report
+        if not a.transcript:
+            ap.error("craft requires a beats file (JSON list of DM beat strings) or transcript JSONL")
+        try:
+            raw = open(a.transcript).read().strip()
+            if raw.startswith("["):
+                beats = json.loads(raw)
+                if beats and isinstance(beats[0], dict):
+                    gm = (a.gm or ["GM"])[0]
+                    beats = [m.get("content", "") for m in beats if m.get("author") == gm]
+            else:
+                gm = (a.gm or ["GM"])[0]
+                beats = [json.loads(l).get("content", "") for l in raw.splitlines()
+                         if l.strip() and json.loads(l).get("author") == gm]
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            print(json.dumps({"error": str(e)}), file=sys.stderr)
+            return 2
+        print(json.dumps(report(beats, a.scene, tuple(a.pc or [])), indent=1))
         return 0
     if a.command == "init":
         from datetime import date
