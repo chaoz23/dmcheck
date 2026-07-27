@@ -130,3 +130,23 @@ cue, and was provably undeliverable — R4 passed on it. Never again.
 lightweight OSS session-ledger existed when we surveyed (2026-07-26), so
 this format is the interchange standard our stack shares: engines tap their
 logs into it; `run`, `watch`, and settlement all consume it.
+
+
+## Evidence bars (v0.4)
+
+Calibrated against 134 hours of professional play, where the naive rules were
+wrong loudly: R1 fired 85 times in one episode with zero valid findings, and
+R7 flagged 115 dead-air gaps of which ~5 were real.
+
+- **R1** now requires a GM-directed question (GM named, rules lexicon, or
+  adjacency to a GM beat) **and** a waiting table — if other players carry on,
+  nobody was blocked. Knob: `question_requires_gm_address`.
+- **R7** exempts the yielded floor: a GM holding back while players talk is
+  craft, not absence. Knobs: `dead_air_requires_quiet_table`,
+  `thresholds.quiet_table_max_messages` (default 3).
+- **R4** seats gain `aliases` — professional cues are in-fiction by character
+  name ~10:1, so the referee must recognise the character's name as a cue.
+
+One narrowing, stated plainly: R1 no longer fires when another player answers
+in the GM's place — at a busy table that is textually indistinguishable from
+the banter that produced the false-accusation storm, and D1 chooses silence.

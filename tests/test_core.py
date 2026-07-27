@@ -31,11 +31,17 @@ class TestMessySession(unittest.TestCase):
         cls.rules = sorted({f["rule"] for f in cls.findings})
 
     def test_all_planted_violations_found(self):
-        self.assertEqual(self.rules, ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"])
+        # v0.4 narrowed R1: Bram asks, then ATTACKS two messages later while
+        # Mira chats on - nobody was blocked, so the old R1 plant is now
+        # correctly a non-violation (naive "?" fired 85x/episode on
+        # professional play with 0 valid; D1 chooses silence).
+        self.assertEqual(self.rules, ["R2", "R3", "R4", "R5", "R6", "R7", "R8"])
 
-    def test_r1_names_the_ignored_player(self):
-        r1 = [f for f in self.findings if f["rule"] == "R1"]
-        self.assertTrue(any("Bram" in f["detail"] for f in r1))
+    def test_r1_suppressed_when_asker_moves_on(self):
+        # v0.4 evidence bars: Bram's question is GM-directed, but he attacks
+        # two beats later and Mira keeps playing - the table never waited.
+        # True R1 fires live in tests/test_evidence_bars.py.
+        self.assertEqual([f for f in self.findings if f["rule"] == "R1"], [])
 
     def test_r5_names_both_parties(self):
         r5 = [f for f in self.findings if f["rule"] == "R5"][0]

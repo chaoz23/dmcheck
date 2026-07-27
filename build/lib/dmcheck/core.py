@@ -43,6 +43,8 @@ def load_charter(path=None):
     ch.setdefault("hidden_terms", [])
     ch.setdefault("rules_enabled", list(RULES))
     ch.setdefault("seats", {})
+    ch.setdefault("question_requires_gm_address", True)
+    ch.setdefault("dead_air_requires_quiet_table", True)
     return ch
 
 
@@ -127,6 +129,20 @@ def _excerpt(r):
             "content": r["content"][:140]}
 
 
+RULES_LEX = None
+
+
+def _rules_lex():
+    global RULES_LEX
+    if RULES_LEX is None:
+        import re
+        RULES_LEX = re.compile(
+            r"\b(dc|roll|check|save|damage|spell|slot|range|feet|ac|advantage|"
+            r"disadvantage|initiative|hit points?|hp|attack|bonus action|"
+            r"can i|do i|am i|what do (?:i|we) see)\b", re.I)
+    return RULES_LEX
+
+
 def _word_in(term, text):
     import re
     return re.search(r"(?<![A-Za-z0-9_])" + re.escape(term) + r"(?![A-Za-z0-9_])",
@@ -154,12 +170,32 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
         for r in T:
             if _is_gm(r, ch) or _is_dice(r, ch) or "?" not in r["content"]:
                 continue
+            # v0.4 evidence bar 1: the question must carry GM-directed
+            # evidence (GM named, rules/world lexicon, or adjacency to a GM
+            # beat). Ground truth: only 43% of question-marked player lines
+            # are TO_GM; a bare "?" is a false-accusation machine.
+            if ch.get("question_requires_gm_address", True):
+                prev = T[r["i"] - 1] if r["i"] > 0 else None
+                directed = (any(_word_in(g, r["content"]) for g in ch["gm"])
+                            or _rules_lex().search(r["content"])
+                            or (prev is not None and _is_gm(prev, ch)))
+                if not directed:
+                    continue
             window = [x for x in T[r["i"] + 1: r["i"] + 1 + n]]
             complete = len(window) >= n or closed
+            # v0.4 evidence bar 2: the table must actually be WAITING - if
+            # other players carry on, the beat was not blocked (10% of true
+            # GM-directed questions go unanswered even at pro tables).
+            others = [x for x in window
+                      if x["author"] != r["author"] and not _is_gm(x, ch)
+                      and not _is_dice(x, ch) and not _is_ooc(x, ch)]
+            if others:
+                continue
             if window and complete and not any(_is_gm(x, ch) for x in window):
                 findings.append(_finding(
-                    "R1", f"answer_within_messages={n}",
-                    f"question from {r['author']} got no GM response within {n} messages",
+                    "R1", f"answer_within_messages={n} (directed, table waiting)",
+                    f"GM-directed question from {r['author']} got no GM response "
+                    f"within {n} messages while the table waited",
                     _excerpt(r)))
 
     # R2 unconsumed-roll: a dice-author message with NO GM message at all in
@@ -206,13 +242,16 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
             # configured mention string the requirement is unverifiable, so
             # fall back to name matching (D1: never accuse on ambiguity).
             seat = (ch.get("seats") or {}).get(e["actor"]) or {}
+            names = [e["actor"]] + list(seat.get("aliases") or [])
             if seat.get("cue_requires_mention") and seat.get("mention"):
                 cued = any(seat["mention"] in r["content"] for r in gms_after)
                 how = (f"contain the required mention {seat['mention']!r} "
                        f"(this seat's transport drops name-in-prose)")
             else:
-                cued = any(_word_in(e["actor"], r["content"]) for r in gms_after)
-                how = "address them by name"
+                cued = any(_word_in(nm, r["content"])
+                           for nm in names for r in gms_after)
+                how = ("address them by name or alias"
+                       if len(names) > 1 else "address them by name")
             if gms_after and not cued:
                 findings.append(_finding(
                     "R4", f"cue_within_gm_messages={k}",
@@ -256,7 +295,18 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
             nxt = next((x for x in T[r["i"] + 1:] if _is_gm(x, ch) and x["ts"]), None)
             gap = (nxt["ts"] - r["ts"]) if nxt else \
                   ((now - r["ts"]) if (now is not None and not closed) else None)
-            if gap is not None and gap > limit:
+            if gap is None or gap <= limit:
+                continue
+            # v0.4 yielded-floor exemption: a GM holding back while players
+            # talk is craft, not absence. Dead air requires a QUIET table.
+            if ch.get("dead_air_requires_quiet_table", True):
+                end_ts = nxt["ts"] if nxt else (now if now is not None else None)
+                between = [x for x in T[r["i"] + 1:]
+                           if x["ts"] and (end_ts is None or x["ts"] < end_ts)
+                           and not _is_gm(x, ch) and not _is_dice(x, ch)]
+                if len(between) >= th.get("quiet_table_max_messages", 3):
+                    continue
+            if True:
                 findings.append(_finding(
                     "R7", f"dead_air_seconds={limit}",
                     (f"GM took {int(gap)}s to respond after "

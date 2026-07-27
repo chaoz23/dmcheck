@@ -46,7 +46,7 @@ def main(argv=None):
     ap.add_argument("--follow", action="store_true", help="watch: keep tailing the file")
     ap.add_argument("--interval", type=float, default=5.0, help="watch: tick seconds")
     ap.add_argument("--notify-cmd", help="watch: shell command fired per OPEN finding (finding JSON on stdin)")
-    ap.add_argument("--version", action="version", version="dmcheck 0.3.0")
+    ap.add_argument("--version", action="version", version="dmcheck 0.4.0")
     a = ap.parse_args(argv)
 
     if a.schema:
@@ -74,9 +74,11 @@ def main(argv=None):
                            "dead_air_seconds": 300, "cue_within_gm_messages": 3},
             "rules_enabled": sorted(RULES),
             "seats": {},
+            "question_requires_gm_address": True,
+            "dead_air_requires_quiet_table": True,
             "_notes": {
                 "gm": "author name(s) as they appear in the transcript — REQUIRED",
-                "seats": "per-seat delivery policy: {name: {cue_requires_mention: true, mention: '<@id>'}} for agent seats behind mention-gated transports",
+                "seats": "per-seat delivery policy incl. aliases (in-fiction cues are by CHARACTER name ~10:1 at pro tables): {\"Ash\": {\"aliases\": [\"Shalia\"], ...}}; also: {name: {cue_requires_mention: true, mention: '<@id>'}} for agent seats behind mention-gated transports",
                 "hidden_terms": "module spoiler names — R6 fires if they leak into GM messages",
                 "thresholds": "R1/R2/R7/R4 knobs; every finding cites the value it judged against",
             },
@@ -122,9 +124,11 @@ def main(argv=None):
             return 2
         KNOWN = {"charter_version", "effective_date", "description", "gm", "players",
                  "dice_authors", "ooc_markers", "hidden_terms", "thresholds",
-                 "rules_enabled", "seats"}
+                 "rules_enabled", "seats", "question_requires_gm_address",
+                 "dead_air_requires_quiet_table"}
         KNOWN_TH = {"answer_within_messages", "roll_ack_within_messages",
-                    "dead_air_seconds", "cue_within_gm_messages"}
+                    "dead_air_seconds", "cue_within_gm_messages",
+                    "quiet_table_max_messages"}
         problems = [f"unknown key '{k}'" for k in ch
                     if k not in KNOWN and not k.startswith("_")]
         problems += [f"unknown threshold '{k}'" for k in ch.get("thresholds", {})
@@ -137,7 +141,8 @@ def main(argv=None):
                 problems.append(f"seat '{name}' must be an object")
                 continue
             problems += [f"seat '{name}': unknown key '{k}'"
-                         for k in set(sc) - {"cue_requires_mention", "mention"}]
+                         for k in set(sc) - {"cue_requires_mention", "mention",
+                                             "aliases"}]
             if sc.get("cue_requires_mention") and not sc.get("mention"):
                 problems.append(f"seat '{name}': cue_requires_mention without a "
                                 f"mention string — unverifiable; R4 falls back to name matching")
