@@ -85,7 +85,7 @@ class Watcher:
                     self.emit({"event": "seat_quiet", "seat": pc,
                                "gm_beats_since_last_action": gm_since,
                                "advisory": True,
-                               "suggest": "check in; hold irreversible advancement"})
+                               "suggest": "offer the same-timeframe: price the elapsed action in turns, then ask what this character was doing during it (retroactive backfill ok - rule 69b)"})
             a = attention(beats, self.scene)
             notice = a and a["notice"]
             if notice != self._last_notice:   # resolve-and-move-on, no nagging
