@@ -52,7 +52,7 @@ def main(argv=None):
     ap.add_argument("--scene", default="SOCIAL", help="craft: COMBAT|SOCIAL|EXPLORATION")
     ap.add_argument("--pc", action="append", help="craft: PC name (repeatable) for voiced-PC detection")
     ap.add_argument("--notify-cmd", help="watch: shell command fired per OPEN finding (finding JSON on stdin)")
-    ap.add_argument("--version", action="version", version="dmcheck 0.5.1")
+    ap.add_argument("--version", action="version", version="dmcheck 0.5.2")
     a = ap.parse_args(argv)
 
     if a.schema:

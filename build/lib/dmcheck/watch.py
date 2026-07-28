@@ -34,6 +34,7 @@ class Watcher:
         self.scene = scene
         self.pcs = tuple(pcs)
         self._last_notice = None
+        self._quiet_flagged = set()
 
     def _evaluate(self, closed=False, now=None):
         findings, _ = check(self.messages, self.ch, self.ledger,
@@ -69,6 +70,22 @@ class Watcher:
             if hd:
                 self.emit({"event": "craft_defect", "beat": len(beats) - 1,
                            "defects": hd, "advisory": True})
+            # seat starvation (rule 69): a player seat silent across N GM
+            # beats while the scene advances. Advisory - people step away.
+            n_gm = len(beats)
+            quiet_after = int(self.ch.get("seat_quiet_gm_beats", 3))
+            for pc in self.pcs:
+                seat_msgs = [m["i"] for m in self.messages
+                             if pc.lower() in (m.get("author") or "").lower()]
+                last = seat_msgs[-1] if seat_msgs else -1
+                gm_since = sum(1 for m in self.messages[last + 1:]
+                               if m.get("author") in self.ch["gm"])
+                if gm_since >= quiet_after and (pc, n_gm) not in self._quiet_flagged                         and pc not in {x for x, _ in self._quiet_flagged if _ >= n_gm - 1}:
+                    self._quiet_flagged.add((pc, n_gm))
+                    self.emit({"event": "seat_quiet", "seat": pc,
+                               "gm_beats_since_last_action": gm_since,
+                               "advisory": True,
+                               "suggest": "check in; hold irreversible advancement"})
             a = attention(beats, self.scene)
             notice = a and a["notice"]
             if notice != self._last_notice:   # resolve-and-move-on, no nagging

@@ -165,3 +165,12 @@ detectors catch what rates structurally cannot: voicing a player's character,
 exposing the inference tree, deferring an adjudication, rolling for the
 player — all born from a live second-agent test. Advisory only: it reports,
 the DM decides, and overrides are expected exactly when the scene demands it.
+
+### seat_quiet (v0.5.2)
+
+`watch --craft --pc <name>` also emits a `seat_quiet` advisory when a player
+seat goes silent across N GM beats (knob: `seat_quiet_gm_beats`, default 3)
+while the scene advances. Origin: a human player stepped away and the agent
+seats carried the scene to its climax without him. The advisory suggests
+checking in and holding irreversible advancement — it never blocks, because a
+virtual table's virtue is that it does not stall when someone disappears.

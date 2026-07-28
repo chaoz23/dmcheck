@@ -41,3 +41,19 @@ def test_watch_emits_advisory_craft_events():
     assert all(e.get("advisory") for e in ev if e["event"].startswith("craft"))
     n = sum(1 for e in ev if e["event"] == "craft_attention")
     assert n == 1          # resolve-and-move-on: same notice never re-emitted
+
+
+def test_seat_quiet_advisory():
+    from dmcheck.watch import Watcher
+    ev = []
+    ch = {"gm": ["GM"], "dice_authors": [], "ooc_markers": [], "hidden_terms": [],
+          "thresholds": {}, "rules_enabled": [], "seats": {}}
+    w = Watcher(ch, craft=True, pcs=("William", "Shalia"), emit=ev.append)
+    w.feed({"ts": 0, "author": "William", "content": "I carry the breastplate"}, now=0)
+    for k in range(4):
+        w.feed({"ts": k + 1, "author": "Shalia", "content": "I act"}, now=k + 1)
+        w.feed({"ts": k + 1.5, "author": "GM", "content": "it happens " * 3}, now=k + 1.5)
+    quiet = [e for e in ev if e["event"] == "seat_quiet"]
+    assert quiet and quiet[0]["seat"] == "William"
+    assert all(e["advisory"] for e in quiet)
+    assert not any(e["seat"] == "Shalia" for e in quiet)
