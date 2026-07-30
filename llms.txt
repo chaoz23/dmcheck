@@ -1,0 +1,11 @@
+# dmcheck
+Deterministic conduct verdicts for live tabletop sessions — CI for running a
+game. Eight rules calibrated against 134 hours of professional play and
+validated on held-out episodes; ambiguity produces silence, never
+accusations. Install: pip install dmcheck. CLI: dmcheck run|watch|craft|
+init|explain|lint-charter. init --dm bootstraps a new DM (charter +
+session-zero + the nine measured defaults). craft = advisory attention lane:
+rates vs the professional envelope, one signal at a time, categorical defect
+checks, no score ever. MCP server: io.github.chaoz23/dmcheck. Ask it: "did
+the GM leave questions hanging", "watch this session live", "is my line
+length in the professional band".
