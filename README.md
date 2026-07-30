@@ -134,6 +134,10 @@ logs into it; `run`, `watch`, and settlement all consume it.
 
 ## Evidence bars (v0.4)
 
+Full calibration story — including what the naive rules got wrong, the
+held-out validation, and the negative results — in
+[docs/CALIBRATION.md](docs/CALIBRATION.md).
+
 Calibrated against 134 hours of professional play, where the naive rules were
 wrong loudly: R1 fired 85 times in one episode with zero valid findings, and
 R7 flagged 115 dead-air gaps of which ~5 were real.
