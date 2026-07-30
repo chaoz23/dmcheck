@@ -57,3 +57,23 @@ def test_seat_quiet_advisory():
     assert quiet and quiet[0]["seat"] == "William"
     assert all(e["advisory"] for e in quiet)
     assert not any(e["seat"] == "Shalia" for e in quiet)
+
+
+def test_rule_checks_1a_1b_11a_11b():
+    from dmcheck.craft import rule_checks
+    beats = [
+        "The goblin lunges - roll initiative!",                     # onset, no order posted
+        "It hits you for 8 damage and steps back behind the barrel then circles wide looking for an opening while you recover",  # long damage beat
+        "Your turn.",                                               # turn-adv, no PC name
+        "The goblin dies.",                                         # bare-number kill
+    ]
+    r = rule_checks(beats, ("Teodor",))
+    rules = {f["rule"] for f in r["findings"]}
+    assert {"1a", "1b", "11b"} <= rules
+    clean = ["Steel rings - roll initiative! The order is Teodor, then the goblin.",
+             "8 damage.", "That brings us to Teodor.",
+             "Your blade takes it through the throat mid-leap and it crashes into the "
+             "barrels, kicks once, and is dead before the wine stops spilling - "
+             "how do you want to do this moment to end, Teodor? Describe the finish."]
+    r2 = rule_checks(clean, ("Teodor",))
+    assert not [f for f in r2["findings"] if f["rule"] in ("1a", "1b")]

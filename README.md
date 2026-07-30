@@ -174,3 +174,13 @@ while the scene advances. Origin: a human player stepped away and the agent
 seats carried the scene to its climax without him. The advisory suggests
 checking in and holding irreversible advancement — it never blocks, because a
 virtual table's virtue is that it does not stall when someone disappears.
+
+### rule checks (v0.5.4)
+
+`craft` now runs the protocol's machine-checkable rules per session
+(testability charter: a rule must state its falsification):
+**1a** initiative order posted within 5 beats of onset · **1b** ≥95% of
+turn-advance beats name a PC · **11a** combat damage-beat median under 20
+words (numbers are the register at pace) · **11b** kills get ceremony ≥3× the
+combat median (lexical kill detection — findings are review items, and say so).
+Advisory throughout; no score exists.

@@ -73,10 +73,73 @@ def hard_defects(beat, pc_names=()):
     return sorted(set(out))
 
 
+
+
+# --- rule checks (v0.5.4): protocol rules 1a/1b/11a/11b, made machine-run ---
+# Per the testability charter (rule 70) these are the rules whose falsification
+# tests are statable from a transcript alone. Advisory findings, never a score;
+# kill detection is lexical, so 11b findings carry that caveat explicitly.
+INITIATIVE = re.compile(r"\broll initiative\b", re.I)
+ORDER_POST = re.compile(r"\b(first up|top of the (?:round|order)|the order is|"
+                        r"goes first|order:)\b", re.I)
+TURN_ADV = re.compile(r"\b(your turn|next up|that brings us to|you'?re up|"
+                      r"next (?:is|to act))\b", re.I)
+DMG_N = re.compile(r"\b\d{1,3} (?:points? of )?\w* ?damage\b", re.I)
+KILL = re.compile(r"\b(dies|is dead|drops? dead|slain|breathes? (?:his|her|its) last|"
+                  r"down for good|kills? (?:it|him|her|them)|finished (?:it|him|her)|"
+                  r"how do you want to do this)\b", re.I)
+COMBAT_SPAN = 30   # GM beats per combat window, or until the next onset
+
+
+def rule_checks(beats, pc_names=()):
+    onsets = [i for i, b in enumerate(beats) if INITIATIVE.search(b)]
+    findings = []
+    windows = []
+    for k, i in enumerate(onsets):
+        end = onsets[k + 1] if k + 1 < len(onsets) else min(i + COMBAT_SPAN, len(beats))
+        win = beats[i:end]
+        windows.append((i, win))
+        # 1a: full order posted within 5 GM beats of onset
+        if not any(ORDER_POST.search(b) for b in win[:6]):
+            findings.append({"rule": "1a", "beat": i,
+                             "fail": "no initiative order posted within 5 GM beats of onset"})
+        # 1b: turn-advance beats name a PC (>=95% of them)
+        if pc_names:
+            adv = [b for b in win if TURN_ADV.search(b)]
+            named = [b for b in adv if any(re.search(r"\b" + re.escape(p) + r"\b", b, re.I)
+                                           for p in pc_names)]
+            if adv and len(named) / len(adv) < 0.95:
+                findings.append({"rule": "1b", "beat": i,
+                                 "fail": f"only {len(named)}/{len(adv)} turn-advance "
+                                         f"beats name a PC (test: >=95%)"})
+    # 11a: combat damage beats median under 20 words
+    dmg = [b for _, win in windows for b in win if DMG_N.search(b)]
+    if dmg:
+        med = st.median(len(b.split()) for b in dmg)
+        if med >= 20:
+            findings.append({"rule": "11a", "beat": None,
+                             "fail": f"combat damage-beat median {med:.0f} words "
+                                     f"(test: <20 - numbers are the register at pace)"})
+    # 11b: kill beats get ceremony (>=3x combat median) - lexical kill
+    # detection, so each finding is a REVIEW ITEM, not a verdict
+    for i, win in windows:
+        wmed = st.median(len(b.split()) for b in win) if win else 0
+        for j, b in enumerate(win):
+            if KILL.search(b) and wmed and len(b.split()) < 3 * wmed                     and "how do you want" not in b.lower():
+                findings.append({"rule": "11b", "beat": i + j,
+                                 "fail": f"possible bare-number kill ({len(b.split())}w "
+                                         f"vs 3x median {3*wmed:.0f}w) - lexical kill "
+                                         f"detection, review before trusting"})
+    return {"combat_onsets": len(onsets), "damage_beats": len(dmg),
+            "findings": findings,
+            "contract": "advisory rule checks (protocol 1a/1b/11a/11b) - review items, no score"}
+
+
 def report(beats, scene="SOCIAL", pc_names=()):
     hd = [{"beat": i, "defects": d} for i, b in enumerate(beats)
           if (d := hard_defects(b, pc_names))]
     return {"beats": len(beats), "rates": {k: round(v, 3) for k, v in rates(beats).items()},
             "envelope": ENV, "attention": attention(beats, scene),
             "hard_defects": hd,
+            "rule_checks": rule_checks(beats, pc_names),
             "contract": "advisory statistics only; nothing here aggregates into a single number"}
