@@ -5,7 +5,8 @@ and validated on held-out episodes; R5 is a retired compatibility id because
 actor != turn owner cannot establish action legality. Ambiguity produces
 silence, never accusations. dmcheck evaluates conduct/communication only;
 srdcheck is advisory, while upstream authority and the DM/table decide
-legality. Preserve source message/event IDs, audience, and correlation IDs:
+legality. Ambiguity is silent or explicitly marked as a low-confidence
+advisory, never promoted to a definite accusation. Preserve source message/event IDs, audience, and correlation IDs:
 unrelated GM text cannot close a typed question, roll, or event. R6 secret
 values and matching excerpts are redacted from CLI/MCP/watch/hook output.
 Install: pip install dmcheck. CLI: dmcheck run|watch|craft|

@@ -68,7 +68,7 @@ def main(argv=None):
     ap.add_argument("--dm", action="store_true", help="init: also write DM-CORE.md (the nine defaults + calibration pointer)")
     ap.add_argument("--scene", default="SOCIAL", help="craft: COMBAT|SOCIAL|EXPLORATION")
     ap.add_argument("--pc", action="append", help="craft: PC name (repeatable) for voiced-PC detection")
-    ap.add_argument("--notify-cmd", help="watch: shell command fired per OPEN finding (finding JSON on stdin)")
+    ap.add_argument("--notify-cmd", help="watch: shell command fired per source-observed OPEN finding (finding JSON on stdin)")
     ap.add_argument("--version", action="version", version="dmcheck 0.5.4")
     a = ap.parse_args(argv)
 
@@ -191,9 +191,10 @@ def main(argv=None):
             ch = load_charter(a.charter)
         except InputValidationError as exc:
             return _print_invalid(exc.issues)
-        print(json.dumps({"rule": rid, "definition": RULES[rid],
-                          "charter_knobs": ch.get("thresholds", {}),
-                          "origin": ORIGINS.get(rid, "")}, indent=1))
+        output = {"rule": rid, "definition": RULES[rid],
+                  "charter_knobs": ch.get("thresholds", {}),
+                  "origin": ORIGINS.get(rid, "")}
+        print(json.dumps(redact_output(output, ch), indent=1))
         return 0
     if a.command == "lint-charter":
         path = a.transcript or a.charter

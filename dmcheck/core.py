@@ -5,8 +5,9 @@ charter. Output: findings, each citing the charter rule it violates, with the
 evidence span attached.
 
 Design contract (D1–D5):
-- A false accusation is the unforgivable bug: a rule fires only when the
-  transcript/ledger *provably* shows the violation. Ambiguity produces silence.
+- A false accusation is the unforgivable bug: only source-observed evidence
+  can become a definite finding. Legacy ambiguity is either silent or an
+  explicitly inferred, low-confidence advisory and is never R8-promoted.
 - Every finding cites its rule id and the charter values it was judged against.
 - The charter is config, not code. The verdict path is model-free.
 - No aggregate "DM score" exists anywhere in this package.
@@ -170,9 +171,22 @@ def _normal(value):
     return unicodedata.normalize("NFKC", str(value))
 
 
+def _fold(value):
+    """Unicode-compatible normalization for caseless security matching."""
+    # Format controls such as zero-width joiners can make a protected word
+    # look intact to a human while defeating literal matching.  They carry no
+    # useful distinction at this security boundary, so compare without them.
+    folded = "".join(c for c in _normal(value).casefold()
+                     if unicodedata.category(c) != "Cf")
+    return unicodedata.normalize("NFKC", folded)
+
+
 def _word_in(term, text):
-    return re.search(r"(?<![\w])" + re.escape(_normal(term)) + r"(?![\w])",
-                     _normal(text), re.I) is not None
+    # re.IGNORECASE does not perform full case folding (for example,
+    # ``Straße`` does not match ``STRASSE``).  Fold first so the redaction
+    # guard and the rule detector share the stronger comparison.
+    return re.search(r"(?<![\w])" + re.escape(_fold(term)) + r"(?![\w])",
+                     _fold(text)) is not None
 
 
 def _hidden_terms(ch):
@@ -268,8 +282,6 @@ def _audience_state(row, transcript, ch):
     audience evidence and only a text heuristic is available.
     """
     event_type = str(row.get("event_type") or "").casefold()
-    if event_type in {"question.to_gm", "question.to_dm"}:
-        return True, "observed"
     audience = row.get("audience")
     if audience is not None:
         values = audience if isinstance(audience, (list, tuple, set)) else [audience]
@@ -279,6 +291,11 @@ def _audience_state(row, transcript, ch):
             return False, "observed"
         if targets & (gm_names | {"gm", "dm", "game_master"}):
             return True, "observed"
+        return False, "observed"
+    if event_type in {"question.to_gm", "question.to_dm"}:
+        return True, "observed"
+    if event_type in {"question.public", "question.to_table",
+                      "question.to_player", "question.player"}:
         return False, "observed"
     reply_to = row.get("reply_to")
     if reply_to is not None:
@@ -292,9 +309,15 @@ def _audience_state(row, transcript, ch):
 
 ROLL_RESULT_TYPES = {"roll.result", "dice.result", "vtt.roll_result",
                      "roll_result", "dice_roll_result"}
+ROLL_NON_RESULT_TYPES = {
+    "bot.status", "bot.error", "dice.status", "dice.error", "roll.error",
+    "roll.request", "dice.request", "vtt.roll_request", "roll_request",
+    "dice_roll_request", "status", "system", "error",
+}
 BOT_NON_RESULT = re.compile(
-    r"\b(error|invalid|usage|help|offline|online|ready|joined|left|rate.?limit|"
-    r"permission|denied|cannot|could not|try again)\b", re.I)
+    r"(?:\b(?:error|invalid|usage|help|offline|online|ready|joined|rate.?limit|"
+    r"permission|denied|cannot|could not|try again)\b|"
+    r"\b(?:last|previous|recent)\s+rolls?\b|\broll\s+history\b)", re.I)
 ROLL_RESULT = re.compile(
     r"(?:\broll(?:s|ed)?\b[^\n]{0,100}\b\d+d\d+\b[^\n]{0,100}"
     r"(?:=|total\s*:?)[ ]*-?\d+\b|"
@@ -304,6 +327,8 @@ ROLL_RESULT = re.compile(
 
 def _roll_result_state(row, ch):
     event_type = str(row.get("event_type") or "").casefold()
+    if event_type in ROLL_NON_RESULT_TYPES:
+        return False, None
     if BOT_NON_RESULT.search(row.get("content") or ""):
         return False, None
     if event_type in ROLL_RESULT_TYPES:
@@ -322,7 +347,7 @@ def _effective_policy(rule, ch, finding):
                 "question_requires_gm_address":
                     ch.get("question_requires_gm_address", True),
                 "correlation": "explicit_source_reference_when_available",
-                "quiet_table_required": True}
+                "quiet_table_required_for_inferred": True}
     if rule == "R2":
         return {"roll_ack_within_messages": th.get("roll_ack_within_messages", 4),
                 "dice_authors": list(ch.get("dice_authors") or []),
@@ -369,6 +394,10 @@ def _finalize_findings(findings, ch):
         finding.setdefault("status", "open")
         finding.setdefault("severity", "finding")
         finding.setdefault("provenance", "observed")
+        finding.setdefault(
+            "confidence",
+            "high" if (finding["provenance"] == "observed"
+                       and finding["severity"] == "finding") else "low")
         finding["effective_policy"] = _effective_policy(finding["rule"], ch,
                                                          finding)
         finding["charter_version"] = ch.get("charter_version", "unversioned")
@@ -392,7 +421,11 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
     if "R1" in enabled:
         n = th.get("answer_within_messages", 6)
         for r in T:
-            if _is_gm(r, ch) or _is_dice(r, ch) or "?" not in r["content"]:
+            typed_question = str(r.get("event_type") or "").casefold() in {
+                "question.to_gm", "question.to_dm",
+            }
+            if (_is_gm(r, ch) or _is_dice(r, ch)
+                    or ("?" not in r["content"] and not typed_question)):
                 continue
             audience, audience_provenance = _audience_state(r, T, ch)
             if audience is False:
@@ -410,31 +443,34 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                             or (prev is not None and _is_gm(prev, ch)))
                 if not directed:
                     continue
-            window = [x for x in T[r["i"] + 1: r["i"] + 1 + n]]
+            after = T[r["i"] + 1:]
+            window = after[:n]
             complete = len(window) >= n or closed
+            obligation_id = _identity(r)
+            explicit = audience is True and audience_provenance == "observed" \
+                and obligation_id is not None
             # v0.4 evidence bar 2: the table must actually be WAITING - if
-            # other players carry on, the beat was not blocked (10% of true
-            # GM-directed questions go unanswered even at pro tables).
+            # other players carry on, an inferred text-only beat was not
+            # provably blocked.  An observed, ID-bearing obligation remains
+            # open through unrelated concurrent player activity.
             others = [x for x in window
                       if x["author"] != r["author"] and not _is_gm(x, ch)
                       and not _is_dice(x, ch) and not _is_ooc(x, ch)]
-            if others:
+            if others and not explicit:
                 continue
-            obligation_id = _identity(r)
+            # The threshold decides when the obligation becomes overdue; a
+            # later explicit response still heals its current OPEN state.
             correlated = any(_is_gm(x, ch) and _correlates(x, obligation_id)
-                             for x in window)
+                             for x in after)
             if correlated or not complete:
                 continue
-            gm_present = any(_is_gm(x, ch) for x in window)
-            explicit = audience is True and audience_provenance == "observed" \
-                and obligation_id is not None
+            gm_present = any(_is_gm(x, ch) for x in after)
             # Preserve the calibrated empty-tail guard for text-only evidence.
             if not explicit and not window:
                 continue
             if explicit:
                 detail = (f"GM-directed question from {r['author']} got no "
-                          f"correlated GM response within {n} messages while "
-                          "the table waited")
+                          f"correlated GM response within {n} messages")
                 severity, status, provenance = "finding", "open", "observed"
             else:
                 # Without a source ID, an intervening GM message may or may
@@ -464,19 +500,24 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
     if "R2" in enabled:
         n = th.get("roll_ack_within_messages", 4)
         for r in T:
+            # A typed result authored by the GM is already table-visible GM
+            # narration, not an unconsumed player/dice-bot obligation.
+            if _is_gm(r, ch):
+                continue
             is_result, provenance = _roll_result_state(r, ch)
             if not is_result:
                 continue
-            window = T[r["i"] + 1: r["i"] + 1 + n]
+            after = T[r["i"] + 1:]
+            window = after[:n]
             tail_is_end = closed and (r["i"] + 1 + n > len(T))
             complete = len(window) >= n or closed
             if not ((window and complete) or tail_is_end):
                 continue
             obligation_id = _identity(r)
             if any(_is_gm(x, ch) and _correlates(x, obligation_id)
-                   for x in window):
+                   for x in after):
                 continue
-            gm_present = any(_is_gm(x, ch) for x in window)
+            gm_present = any(_is_gm(x, ch) for x in after)
             explicit = provenance == "observed" and obligation_id is not None
             if explicit:
                 detail = (f"dice result from {r['author']} received no correlated "
@@ -508,11 +549,19 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
     # unrelated GM chatter.
     if "R3" in enabled and ledger:
         for e in ledger:
-            if e.get("type") not in ("event", "act") or e.get("ts") is None:
+            if e.get("type") not in ("event", "act"):
                 continue
             obligation_id = _identity(e)
-            later_gms = [r for r in T if _is_gm(r, ch) and r.get("ts") is not None
-                         and r["ts"] >= e["ts"]]
+            if obligation_id is None and e.get("ts") is None:
+                # With neither identity nor time there is no observable join
+                # key.  DMC-001's evaluation envelope reports this gap.
+                continue
+            later_gms = [
+                r for r in T
+                if _is_gm(r, ch)
+                and (e.get("ts") is None or r.get("ts") is None
+                     or r["ts"] >= e["ts"])
+            ]
             if any(_correlates(r, obligation_id) for r in later_gms):
                 continue
             explicit = obligation_id is not None
@@ -529,7 +578,7 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
             findings.append(_finding(
                 "R3", "correlation=explicit_source_reference",
                 detail,
-                {"ledger_ts": e["ts"], "event_id": obligation_id,
+                {"ledger_ts": e.get("ts"), "event_id": obligation_id,
                  "type": e.get("type"),
                  "text": (e.get("text") or "")[:140],
                  "uncorrelated_gm_messages": len(later_gms)},
@@ -624,7 +673,7 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
     # R8 unresolved-session-end: derive from the current obligation state, not
     # an arbitrary transcript quartile.  Uncertain legacy inferences remain
     # visible above but are not promoted to a definite open obligation here.
-    if "R8" in enabled and closed and findings and T:
+    if "R8" in enabled and closed and findings:
         open_obligations = [f for f in findings
                             if f["rule"] in ("R1", "R2", "R3")
                             and f.get("status", "open") == "open"

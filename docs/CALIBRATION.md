@@ -25,10 +25,11 @@ The naive rules produced **85 findings in a single episode — zero valid.**
 - R7 exempts the **yielded floor**: dead air requires a quiet table.
 - R4 recognizes **in-fiction cues**: professionals cue players by *character*
   name (clear majority to dominant of all naming), so seats carry aliases.
-- One narrowing, stated plainly: R1 no longer fires when another player
-  answers in the GM's place — at a busy table that is textually
+- One narrowing, stated plainly: an inferred/text-only R1 no longer fires when
+  another player answers in the GM's place — at a busy table that is textually
   indistinguishable from banter, and D1 chooses silence over an unprovable
-  accusation.
+  accusation. Explicit audience plus an immutable obligation ID remains open
+  through unrelated concurrent player activity.
 
 ## Correlation and privacy containment
 

@@ -6,7 +6,7 @@ Feed it a session transcript (and optionally an engine event ledger) plus a **ta
 
 > **Cold-boot probe (2026-07-24):** a fresh agent session given only this repo URL installed and refereed a session in **2 commands**, verified all three exit-code legs against the docs, and confirmed the no-false-accusation contract held (a consumed roll produced silence). Its friction notes shipped as 0.1.1 (`--dice-bot`, `dmcheck charter`).
 >
-> **The design contract:** a false accusation is the unforgivable bug. A rule fires only when the transcript *provably* shows the violation — ambiguity produces silence, never noise. The verdict path is model-free and deterministic: same transcript, same findings, every time.
+> **The design contract:** a false accusation is the unforgivable bug. Only source-observed evidence becomes a definite finding. Legacy ambiguity is either silent or explicitly labeled `severity: advisory`, `provenance: inferred`, `confidence: low`; it is never promoted by R8 or sent to a notification hook. The verdict path is model-free and deterministic: same transcript, same findings, every time.
 
 ## 30 seconds to a refereed session
 
@@ -24,7 +24,7 @@ $ dmcheck run session.jsonl --gm "Greta"
    "charter": "roll_ack_within_messages=4; correlation=explicit",
    "detail": "dice result from DiceBot received no correlated GM narration within 4 messages",
    "evidence": {"index": 6, "author": "DiceBot", "obligation_id": "roll-42"},
-   "status": "open", "severity": "finding", "provenance": "observed",
+   "status": "open", "severity": "finding", "provenance": "observed", "confidence": "high",
    "charter_digest": "sha256:...", "effective_policy": {"roll_ack_within_messages": 4, "...": "..."}},
   ...
  ],
@@ -61,12 +61,15 @@ communication or recovery obligation.
 ## Live mode (0.2): the referee sits AT the table
 
 `dmcheck watch` runs the same engine over a *growing* session — stdin JSONL or a
-tailed file — and emits lifecycle events: **OPEN** when a violation becomes
-provable (thresholds fully elapsed; no predictions, ever), **RESOLVED** when a
-living condition heals (the engine event finally got narrated). `--notify-cmd`
-fires your own hook per OPEN finding — dmcheck itself never posts anywhere.
-At session end a closed-mode pass runs, so watch's final state provably equals
-`dmcheck run` on the full transcript (tested).
+tailed file — and emits lifecycle events: **OPEN** when an observed finding
+becomes provable or a legacy inference becomes advisory (thresholds fully
+elapsed; no predictions), **RESOLVED** when a living condition heals (the
+engine event finally got narrated). `--notify-cmd`
+fires your own hook per source-observed OPEN finding; inferred advisories remain
+visible in the event stream but never invoke the hook. dmcheck itself never posts anywhere.
+At session end a closed-mode pass runs. `session_end.open` and `open_count`
+report actionable source-observed findings only; they exclude the R8 aggregate
+and inferred advisories.
 
 ```console
 $ your-chat-fetcher | dmcheck watch - --gm "Rob" --notify-cmd 'notify-dm.sh'
@@ -85,7 +88,7 @@ feels it.
 
 ## The charter is config, not code
 
-`dmcheck/default_charter.json` is the single authoritative packaged default. It carries `schema_version`, `charter_version`, and a verified SHA-256 `charter_digest`; checkout and wheel execution load that same resource. Its digest is release-locked to the schema/charter version pair, so a changed packaged default refuses to load until its version migration is declared. Override any of it — cue conventions, dead-air tolerance, dice-bot names, hidden-term lists — and version it. Hidden terms may be strings for compatibility or `{id, value}` objects; opaque host-issued IDs are preferred. Finding, watch-hook, CLI, and MCP output withholds both the configured value and raw matching excerpt. A league or organized-play program could publish a charter the way they publish a player's guide; dmcheck then referees any table against it.
+`dmcheck/default_charter.json` is the single authoritative packaged default. It carries `schema_version`, `charter_version`, and a verified SHA-256 `charter_digest`; checkout and wheel execution load that same resource. Its digest is release-locked to the schema/charter version pair, so a changed packaged default refuses to load until its version migration is declared. Override any of it — cue conventions, dead-air tolerance, dice-bot names, hidden-term lists — and version it. Hidden terms may be strings for compatibility or `{id, value}` objects; opaque host-issued IDs are preferred. Finding, watch-hook, CLI, and MCP output withholds both the configured value and raw matching excerpt. An emitted finding digest covers public, redacted policy and deliberately does not attest to, or commit to, a hidden value. A league or organized-play program could publish a charter the way they publish a player's guide; dmcheck then referees any table against it.
 
 ```console
 $ dmcheck run session.jsonl --charter our-table.json --ledger events.jsonl
@@ -104,7 +107,7 @@ Direct API callers can use `apply_charter_overrides(load_charter(), gm=["Rob"])`
 - Findings are structured JSON with rule id, charter citation, effective machine policy, provenance, human-readable detail, and redacted evidence — built to be consumed by a GM agent that fixes its own procedure between beats.
 - Every evaluation returns `status: clean|findings|invalid|incomplete`. Invalid and incomplete outcomes exit 2, carry stable error codes and JSON pointers, and never place errors in `findings`. Empty input, no observed configured GM, or no evidence-eligible enabled rule can never report clean.
 - Published package schemas are `charter.schema.json`, `transcript.schema.json`, `ledger.schema.json`, and `evaluation-result.schema.json`. Missing timestamps are disclosed through `skipped_rules`; malformed supplied timestamps are invalid.
-- Explicit source IDs are authoritative for correlation. Text-only question/roll/event detection is inferred/advisory, and ambiguous legacy evidence follows D1 (silence rather than accusation). The evaluation-envelope work tracked separately must expose that coverage gap; silence is not proof of complete observation.
+- Explicit source IDs are authoritative for correlation. Text-only question/roll/event detection is inferred/advisory; ambiguous legacy evidence is silent when even an advisory would overstate the source, and otherwise remains visibly low-confidence. The evaluation-envelope work tracked separately must expose that coverage gap; silence is not proof of complete observation.
 
 ## What it does NOT do (on purpose)
 
@@ -177,9 +180,11 @@ R7 flagged 115 dead-air gaps of which ~5 were real.
 - **R4** seats gain `aliases` — professional cues are in-fiction by character
   name ~10:1, so the referee must recognise the character's name as a cue.
 
-One narrowing, stated plainly: R1 no longer fires when another player answers
-in the GM's place — at a busy table that is textually indistinguishable from
-the banter that produced the false-accusation storm, and D1 chooses silence.
+One narrowing, stated plainly: an inferred/text-only R1 no longer fires when
+another player answers in the GM's place — at a busy table that is textually
+indistinguishable from the banter that produced the false-accusation storm,
+and D1 chooses silence. An explicit audience plus immutable obligation ID is
+not suppressed by unrelated player activity or another concurrent question.
 
 ## The attention lane (v0.5)
 

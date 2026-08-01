@@ -13,7 +13,8 @@ TOOLS = [
                     "findings include unanswered players, unconsumed rolls, "
                     "missing cues, spoiler leaks, and dead air; each cites the charter "
                     "rule violated. False accusations are treated as the worst bug: "
-                    "ambiguity produces silence, while unusable evidence fails closed. "
+                    "legacy ambiguity is silent or explicitly low-confidence advisory, "
+                    "never a definite finding; unusable evidence fails closed. "
                     "Evaluates conduct and communication only; never decides whether "
                     "an action is legal.",
      "inputSchema": {"type": "object", "additionalProperties": False,

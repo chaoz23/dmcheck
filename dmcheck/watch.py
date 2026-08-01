@@ -1,11 +1,12 @@
 """dmcheck live mode — the referee sits AT the table (v0.2).
 
 Same engine as post-hoc `run`; a Watcher evaluates the growing transcript on
-every message and every tick, diffs the finding set, and emits lifecycle
-events: OPEN (violation just became provable — thresholds fully elapsed, no
-predictions) and RESOLVED (a living condition healed, e.g. an engine event got
-narrated). At session end a closed-mode evaluation runs, so the final OPEN set
-provably equals `dmcheck run` on the full transcript.
+every message and every tick, diffs the result set, and emits lifecycle
+events: OPEN (an observed finding became provable, or a legacy inference became
+advisory, after its threshold elapsed) and RESOLVED (a living condition healed,
+e.g. an engine event got narrated). At session end a closed-mode evaluation
+runs. Its `open` summary counts actionable source-observed findings, excluding
+the R8 aggregate and inferred advisories.
 """
 import json
 import subprocess
@@ -21,7 +22,18 @@ from .validation import (InputValidationError, issue, normalize_charter,
 
 def _fid(f):
     ev = f.get("evidence") or {}
+    obligation_id = ev.get("obligation_id") or ev.get("event_id")
+    if obligation_id is not None:
+        return (f["rule"], "obligation", str(obligation_id))
+    if f.get("rule") == "R8":
+        return ("R8", "session")
     return (f["rule"], ev.get("index"), ev.get("ledger_ts"), f.get("detail"))
+
+
+def _is_actionable(finding):
+    return (finding.get("status", "open") == "open"
+            and finding.get("severity", "finding") == "finding"
+            and finding.get("provenance", "observed") == "observed")
 
 
 class Watcher:
@@ -95,10 +107,11 @@ class Watcher:
             if fid not in self.open:
                 self.open[fid] = f
                 self.emit({"event": "open", **f})
-                if self.notify_cmd:
+                if self.notify_cmd and _is_actionable(f):
                     try:
+                        payload = redact_output(f, self.ch)
                         subprocess.run(self.notify_cmd, shell=True,
-                                       input=json.dumps(f), text=True,
+                                       input=json.dumps(payload), text=True,
                                        timeout=30, check=False)
                     except Exception:  # noqa: BLE001 — notify must never kill the watch
                         pass
@@ -162,9 +175,14 @@ class Watcher:
             result = self._fatal
         else:
             result = self._evaluate(closed=True)
+        # R8 summarizes R1-R3 state and must not count as a second open item.
+        # Inferred advisories likewise remain visible without being promoted
+        # into the definite session-end state.
+        definite = [f for f in self.open.values()
+                    if f.get("rule") != "R8" and _is_actionable(f)]
         summary = {"event": "session_end", **result.to_dict(),
-                   "open": sorted({f["rule"] for f in self.open.values()}),
-                   "open_count": len(self.open)}
+                   "open": sorted({f["rule"] for f in definite}),
+                   "open_count": len(definite)}
         self.emit(summary)
         return result.exit_code
 
@@ -241,4 +259,7 @@ def watch_main(a):
                       "transcript could not be read: %s" % exc)])
     except (KeyboardInterrupt, EOFError):
         pass
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        w.emit({"event": "error", "error": str(exc)})
+        return 2
     return w.close()
