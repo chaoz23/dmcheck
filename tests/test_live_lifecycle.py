@@ -531,6 +531,11 @@ class TestFollowEndToEnd(TestCase):
                 elif calls["count"] == 2:
                     with transcript_path.open("a", encoding="utf-8") as handle:
                         handle.write(jsonl(
+                            {"ts": 250, "author": "GM",
+                             "content": "The wind rises."}))
+                elif calls["count"] == 3:
+                    with transcript_path.open("a", encoding="utf-8") as handle:
+                        handle.write(jsonl(
                             {"ts": 300, "author": "GM",
                              "correlation_id": "ward-1",
                              "content": "The ward breaks."}))

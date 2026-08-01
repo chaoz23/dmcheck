@@ -303,6 +303,9 @@ class CorrelationTests(unittest.TestCase):
         watcher = Watcher(charter("R3"), ledger, emit=events.append)
         watcher.feed({"ts": 1, "author": "GM", "content": "Begin."}, now=1)
         watcher.tick(now=3)
+        self.assertFalse(any(e["event"] == "open" and e.get("rule") == "R3"
+                             for e in events))
+        watcher.feed({"ts": 3, "author": "GM", "content": "Unrelated."}, now=3)
         opened = [e for e in events
                   if e["event"] == "open" and e["rule"] == "R3"]
         self.assertEqual({e["evidence"]["event_id"] for e in opened},

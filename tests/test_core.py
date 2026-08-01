@@ -130,6 +130,10 @@ class TestLiveMode(unittest.TestCase):
         w = Watcher(ch, ledger, emit=events.append)
         w.feed({"ts": 1700000100, "author": "Greta", "content": "The fight rages."})
         w.tick(now=1700000300)
+        self.assertFalse(any(e["event"] == "open" and e["rule"] == "R3"
+                             for e in events))
+        w.feed({"ts": 1700000300, "author": "Greta",
+                "content": "Elsewhere, the fight continues."}, now=1700000301)
         self.assertTrue(any(e["event"] == "open" and e["rule"] == "R3" for e in events))
         w.feed({"ts": 1700000400, "author": "Greta",
                 "content": "The guard drops in a heap!",

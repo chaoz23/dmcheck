@@ -772,6 +772,13 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                 continue
             explicit = obligation_id is not None
             if explicit:
+                # In live mode the event itself opens an obligation, not an
+                # immediate accusation. Give the GM at least one subsequent
+                # narration opportunity; the first uncorrelated GM beat makes
+                # the missing correlation observable. Closed evaluation can
+                # adjudicate an unnarrated tail directly.
+                if not closed and not later_gms:
+                    continue
                 detail = ("engine event received no correlated GM narration: "
                           f"{e.get('text') or e.get('type')}")
                 severity, status, provenance = "finding", "open", "observed"
