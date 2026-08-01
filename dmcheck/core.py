@@ -104,7 +104,12 @@ class EvaluationResult:
             metadata = {
                 "schema_version": self.charter.get("schema_version"),
                 "charter_version": self.charter.get("charter_version"),
-                "digest": self.charter.get("charter_digest"),
+                # The canonical validation digest commits to secret values and
+                # is intentionally confined to the trusted charter document.
+                # Publishing it would give ordinary output consumers an
+                # offline dictionary oracle for low-entropy spoilers.
+                "digest": public_charter_digest(self.charter),
+                "digest_scope": "public-policy; hidden values withheld",
             }
         return {
             "result_schema_version": "1.0",
@@ -191,10 +196,14 @@ def _dedupe_findings(findings):
     return list(unique.values())
 
 
-def _ledger_evidence(event, **evidence):
+def _ledger_evidence(event, charter, **evidence):
     """Bind a ledger-backed finding to the best available source identity."""
+    # A fingerprint over raw prose is a dictionary oracle for configured
+    # secrets even when the visible excerpt is redacted.  Bind to the
+    # redacted event instead; native IDs remain intact when present.
+    safe_event = _redact(event, charter)
     return {**evidence,
-            "source_fingerprint": _source_row_key("ledger", event)}
+            "source_fingerprint": _source_row_key("ledger", safe_event)}
 
 
 def _is_gm(r, ch):
@@ -308,7 +317,8 @@ def redact_output(value, ch):
     return _redact(value, ch)
 
 
-def _charter_digest(ch):
+def public_charter_digest(ch):
+    """Digest only policy that is safe to expose to untrusted output sinks."""
     encoded = json.dumps(public_charter(ch), sort_keys=True,
                          separators=(",", ":"), ensure_ascii=False).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
@@ -463,10 +473,30 @@ def _effective_policy(rule, ch, finding):
 
 
 def _finalize_findings(findings, ch):
-    digest = _charter_digest(ch)
+    digest = public_charter_digest(ch)
+    redacted = [_redact(raw, ch) for raw in findings]
+
+    # Finding IDs are public correlation handles.  Computing them from raw
+    # evidence would leak a deterministic hash of any configured spoiler in
+    # that evidence.  Re-key every public ID from redacted evidence and repair
+    # R8's references to the affected obligations before deriving its ID.
+    remap = {}
+    for raw, finding in zip(findings, redacted):
+        if finding.get("rule") == "R8" or "rule" not in finding:
+            continue
+        public_id = _finding_id(finding["rule"], finding.get("evidence") or {})
+        remap[raw.get("finding_id")] = public_id
+        finding["finding_id"] = public_id
+    for finding in redacted:
+        if finding.get("rule") == "R8":
+            evidence = finding.get("evidence") or {}
+            refs = evidence.get("finding_ids")
+            if isinstance(refs, list):
+                evidence["finding_ids"] = [remap.get(ref, ref) for ref in refs]
+            finding["finding_id"] = _finding_id("R8", evidence)
+
     out = []
-    for raw in findings:
-        finding = _redact(raw, ch)
+    for finding in redacted:
         if "rule" not in finding:
             out.append(finding)
             continue
@@ -537,7 +567,8 @@ def incomplete_obligations(transcript, charter, ledger=None, now=None):
                 transcript, charter, event, required)
             if not cued and len(window) < required:
                 evidence = _ledger_evidence(
-                    event, actor=event["actor"], ledger_ts=event["ts"])
+                    event, charter, actor=event["actor"],
+                    ledger_ts=event["ts"])
                 incomplete.append({
                     "finding_id": _finding_id("R4", evidence),
                     "rule": "R4", "status": "incomplete",
@@ -753,8 +784,8 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
             findings.append(_finding(
                 "R3", "correlation=explicit_source_reference",
                 detail,
-                _ledger_evidence(
-                    e, ledger_ts=e.get("ts"), event_id=obligation_id,
+                    _ledger_evidence(
+                        e, ch, ledger_ts=e.get("ts"), event_id=obligation_id,
                     type=e.get("type"),
                     text=(e.get("text") or "")[:140],
                     uncorrelated_gm_messages=len(later_gms)),
@@ -777,7 +808,7 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                     f"turn began for {e['actor']} but the next {k} GM "
                     f"message(s) never {how}",
                     _ledger_evidence(
-                        e, actor=e["actor"], ledger_ts=e["ts"])))
+                        e, ch, actor=e["actor"], ledger_ts=e["ts"])))
 
     # R5 deliberately has no evaluator. Actor != turn owner is coordination
     # context, not evidence that an action was illegal or that anyone violated

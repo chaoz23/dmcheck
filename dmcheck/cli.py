@@ -17,7 +17,8 @@ import math
 import sys
 
 from . import RULES, __version__, evaluate_paths, load_charter
-from .core import invalid_result, public_charter, redact_output
+from .core import (invalid_result, public_charter, public_charter_digest,
+                   redact_output)
 from .validation import (InputValidationError, issue, load_craft_input,
                          normalize_charter)
 
@@ -248,7 +249,8 @@ def main(argv=None):
             "status": "clean", "exit_code": 0, "ok": True, "problems": [],
             "schema_version": ch["schema_version"],
             "charter_version": ch["charter_version"],
-            "charter_digest": ch["charter_digest"],
+            "charter_digest": public_charter_digest(ch),
+            "charter_digest_scope": "public-policy; hidden values withheld",
         }, indent=1))
         return 0
     if a.command == "watch":

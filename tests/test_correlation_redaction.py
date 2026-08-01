@@ -8,7 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from dmcheck.cli import main as cli_main
-from dmcheck.core import (check, load_transcript, public_charter,
+from dmcheck.core import (check, evaluate, load_transcript, public_charter,
                           redact_output)
 from dmcheck.mcp import _call
 from dmcheck.watch import Watcher
@@ -457,6 +457,26 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertNotIn("strasse", stream.getvalue().casefold())
 
+    def test_cli_lint_digest_does_not_commit_to_hidden_value(self):
+        outputs = []
+        with tempfile.TemporaryDirectory() as td:
+            for index, secret in enumerate(("Dragon", "Owlbear")):
+                path = os.path.join(td, f"charter-{index}.json")
+                protected = charter(
+                    "R6", hidden_terms=[{"id": "room-7", "value": secret}])
+                with open(path, "w") as handle:
+                    json.dump(protected, handle)
+                stream = io.StringIO()
+                with redirect_stdout(stream):
+                    code = cli_main(["lint-charter", path])
+                self.assertEqual(code, 0)
+                outputs.append(json.loads(stream.getvalue()))
+        self.assertEqual(outputs[0]["charter_digest"],
+                         outputs[1]["charter_digest"])
+        self.assertEqual(
+            outputs[0]["charter_digest_scope"],
+            "public-policy; hidden values withheld")
+
     def test_cli_run_redacts_top_level_charter_version(self):
         protected = self._charter("R6")
         protected["charter_version"] = self.SECRET_VARIANT
@@ -560,6 +580,39 @@ class RedactionTests(unittest.TestCase):
         third = check(transcript, changed_policy)[0][0]["charter_digest"]
         self.assertEqual(first, second)
         self.assertNotEqual(first, third)
+
+    def test_public_envelope_and_finding_ids_are_not_secret_hash_oracles(self):
+        def result(secret):
+            protected = charter(
+                "R7", hidden_terms=[{"id": "room-7", "value": secret}])
+            transcript = rows(
+                {"ts": 1, "author": "A", "content": f"I saw {secret}."},
+                {"ts": 401, "author": "GM", "content": "Back."},
+            )
+            return evaluate(transcript, protected).to_dict()
+
+        dragon = result("Dragon")
+        owlbear = result("Owlbear")
+        self.assertEqual(dragon["charter"], owlbear["charter"])
+        self.assertEqual(dragon["findings"][0]["finding_id"],
+                         owlbear["findings"][0]["finding_id"])
+
+    def test_r3_public_source_fingerprint_hashes_redacted_evidence(self):
+        def finding(secret):
+            protected = charter(
+                "R3", hidden_terms=[{"id": "room-7", "value": secret}])
+            transcript = rows(
+                {"ts": 0, "author": "GM", "content": "Begin."},
+            )
+            ledger = [{"ts": 1, "type": "event", "id": "event-1",
+                       "text": f"The {secret} awakens"}]
+            return check(transcript, protected, ledger)[0][0]
+
+        dragon = finding("Dragon")
+        owlbear = finding("Owlbear")
+        self.assertEqual(dragon["evidence"]["source_fingerprint"],
+                         owlbear["evidence"]["source_fingerprint"])
+        self.assertEqual(dragon["finding_id"], owlbear["finding_id"])
 
 
 if __name__ == "__main__":

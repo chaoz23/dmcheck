@@ -87,6 +87,10 @@ all structured JSON in TextContent. A host that injects `structuredContent`
 directly into a model must preserve this trust boundary; dmcheck cannot enforce
 host prompt construction.
 
+Public result digests, finding IDs, and source fingerprints are computed only
+after configured hidden values are redacted. The trusted charter's canonical
+digest is never exposed as a low-entropy spoiler dictionary oracle.
+
 The tool result has `isError: false` for both `clean` and `findings`: in both
 cases the requested evaluation completed. It has `isError: true` for `invalid`
 and `incomplete`, allowing an agent to repair input or collect missing evidence.

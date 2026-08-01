@@ -364,9 +364,12 @@ class TestToolContract(unittest.TestCase):
             str(fixture / "charter.json"),
             str(fixture / "messy-ledger.jsonl"),
         ).to_dict()
-        self.assertGreaterEqual(
+        # This legacy fixture now exercises only the findings its evidence can
+        # authoritatively support. R4 waits for its full configured window, R5
+        # is retired, and R8 never promotes inferred R2/R3 advisories.
+        self.assertEqual(
             {finding["rule"] for finding in all_rules["findings"]},
-            {"R2", "R3", "R4", "R5", "R6", "R7", "R8"})
+            {"R2", "R3", "R6", "R7"})
         output_schema.validate(all_rules)
 
     def test_clean_findings_invalid_and_incomplete_are_distinct_tool_results(self):

@@ -13,7 +13,7 @@ from argparse import Namespace
 from unittest import mock
 
 from dmcheck import (apply_charter_overrides, evaluate, evaluate_paths,
-                     load_charter)
+                     load_charter, public_charter_digest)
 from dmcheck.cli import main as cli_main
 from dmcheck.craft import evaluate as evaluate_craft
 from dmcheck.mcp import _call as mcp_call
@@ -521,7 +521,10 @@ class TestTransportParity(unittest.TestCase):
         self.assertEqual(expected.charter["dice_authors"], ["DiceBot"])
         for result in (expected.to_dict(), json.loads(stdout), mcp_result):
             self.assertEqual(result["charter"]["digest"],
-                             effective["charter_digest"])
+                             public_charter_digest(effective))
+            self.assertEqual(
+                result["charter"]["digest_scope"],
+                "public-policy; hidden values withheld")
 
     def test_watch_file_and_stdin_empty_are_incomplete_exit_two(self):
         empty = self._write("empty.jsonl", "\n\n")
