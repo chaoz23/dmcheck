@@ -127,13 +127,69 @@ def invalid_result(issues, mode="closed", messages=0, charter=None):
                             errors=list(issues), charter=charter)
 
 
+def _source_row_key(kind, row):
+    """Stable repo-local source identity used for replay idempotency."""
+    native = row.get("id") or row.get("source_id")
+    if native is not None:
+        return f"{kind}:id:{native}"
+    payload = ({key: row.get(key) for key in ("ts", "author", "content")}
+               if kind == "transcript" else dict(row))
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False, allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _dedupe_rows(rows, kind):
+    unique = []
+    seen = set()
+    for row in rows:
+        key = _source_row_key(kind, row)
+        if key not in seen:
+            seen.add(key)
+            unique.append(row)
+    return unique
+
+
 # ---------- helpers ----------
 
+def _finding_id(rule, evidence):
+    # Transcript indices are presentation coordinates and may change when a
+    # duplicate delivery is removed. The source timestamp/author/content stay
+    # in evidence and form the stable repo-local correlation instead.
+    identity_evidence = {k: v for k, v in evidence.items() if k != "index"}
+    # JSON distinguishes 10 from 10.0 textually even though both denote the
+    # same instant. Batch loaders and watch normalize to floats, but callers
+    # may invoke check() directly with integer timestamps; identity must not
+    # depend on that transport detail.
+    for key in ("ts", "ledger_ts"):
+        value = identity_evidence.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            identity_evidence[key] = float(value)
+    encoded = json.dumps(
+        {"rule": rule, "evidence": identity_evidence}, sort_keys=True,
+        separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return f"{rule.lower()}-{hashlib.sha256(encoded).hexdigest()[:24]}"
+
+
 def _finding(rule, charter_cite, msg, evidence, **metadata):
-    out = {"rule": rule, "summary": RULES[rule], "charter": charter_cite,
+    out = {"finding_id": _finding_id(rule, evidence),
+           "rule": rule, "summary": RULES[rule], "charter": charter_cite,
            "detail": msg, "evidence": evidence}
     out.update(metadata)
     return out
+
+
+def _dedupe_findings(findings):
+    unique = {}
+    for finding in findings:
+        unique.setdefault(finding["finding_id"], finding)
+    return list(unique.values())
+
+
+def _ledger_evidence(event, **evidence):
+    """Bind a ledger-backed finding to the best available source identity."""
+    return {**evidence,
+            "source_fingerprint": _source_row_key("ledger", event)}
 
 
 def _is_gm(r, ch):
@@ -150,7 +206,7 @@ def _is_ooc(r, ch):
 
 
 def _excerpt(r):
-    return {"index": r["i"], "author": r["author"],
+    return {"index": r["i"], "ts": r.get("ts"), "author": r["author"],
             "content": r["content"][:140]}
 
 
@@ -424,6 +480,100 @@ def _finalize_findings(findings, ch):
     return out
 
 
+def _r4_context(transcript, charter, event, required_beats):
+    gms_after = [r for r in transcript
+                 if _is_gm(r, charter) and r.get("ts") is not None
+                 and r["ts"] >= event["ts"]][:required_beats]
+    seat = (charter.get("seats") or {}).get(event["actor"]) or {}
+    names = [event["actor"]] + list(seat.get("aliases") or [])
+    if seat.get("cue_requires_mention") and seat.get("mention"):
+        cued = any(seat["mention"] in r["content"] for r in gms_after)
+        how = (f"contain the required mention {seat['mention']!r} "
+               f"(this seat's transport drops name-in-prose)")
+    else:
+        cued = any(_word_in(name, row["content"])
+                   for name in names for row in gms_after)
+        how = ("address them by name or alias"
+               if len(names) > 1 else "address them by name")
+    return gms_after, cued, how
+
+
+def _r7_yielded_floor(transcript, charter, row, end_ts):
+    if not charter.get("dead_air_requires_quiet_table", True):
+        return False
+    between = [item for item in transcript[row["i"] + 1:]
+               if item.get("ts") is not None
+               and (end_ts is None or item["ts"] < end_ts)
+               and not _is_gm(item, charter) and not _is_dice(item, charter)]
+    return len(between) >= charter["thresholds"].get(
+        "quiet_table_max_messages", 3)
+
+
+def incomplete_obligations(transcript, charter, ledger=None, now=None):
+    """Return terminal obligations that lack enough evidence for a finding.
+
+    This is deliberately top-level state, never a conduct finding. It covers
+    the repo-local R4/R7 evidence windows corrected by DMC-002; canonical
+    cross-process obligation state remains a PORT-001/PORT-002 dependency.
+    """
+    ledger = ledger or []
+    enabled = set(charter.get("rules_enabled", list(RULES)))
+    thresholds = charter["thresholds"]
+    incomplete = []
+
+    if "R4" in enabled:
+        required = thresholds.get("cue_within_gm_messages", 3)
+        for event in ledger:
+            if event.get("type") != "turn" or not event.get("actor") \
+                    or event.get("ts") is None:
+                continue
+            window, cued, _ = _r4_context(
+                transcript, charter, event, required)
+            if not cued and len(window) < required:
+                evidence = _ledger_evidence(
+                    event, actor=event["actor"], ledger_ts=event["ts"])
+                incomplete.append({
+                    "finding_id": _finding_id("R4", evidence),
+                    "rule": "R4", "status": "incomplete",
+                    "reason": "insufficient_qualifying_gm_beats",
+                    "charter": f"cue_within_gm_messages={required}",
+                    "observed_gm_beats": len(window),
+                    "required_gm_beats": required,
+                    "evidence": evidence,
+                })
+
+    if "R7" in enabled:
+        limit = thresholds.get("dead_air_seconds", 300)
+        for row in transcript:
+            if _is_gm(row, charter) or _is_dice(row, charter) \
+                    or _is_ooc(row, charter) or row.get("ts") is None:
+                continue
+            next_gm = next((item for item in transcript[row["i"] + 1:]
+                           if _is_gm(item, charter)
+                           and item.get("ts") is not None), None)
+            if next_gm is not None or _r7_yielded_floor(
+                    transcript, charter, row, now):
+                continue
+            observed = None if now is None else max(0, now - row["ts"])
+            if observed is None or observed <= limit:
+                evidence = _excerpt(row)
+                incomplete.append({
+                    "finding_id": _finding_id("R7", evidence),
+                    "rule": "R7", "status": "incomplete",
+                    "reason": "insufficient_elapsed_observation",
+                    "charter": f"dead_air_seconds={limit}",
+                    "observed_seconds": (None if observed is None
+                                         else int(observed)),
+                    "required_seconds": limit,
+                    "evidence": evidence,
+                })
+
+    unique = {}
+    for item in incomplete:
+        unique.setdefault(item["finding_id"], item)
+    return list(unique.values())
+
+
 # ---------- the rules ----------
 
 def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
@@ -597,10 +747,11 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
             findings.append(_finding(
                 "R3", "correlation=explicit_source_reference",
                 detail,
-                {"ledger_ts": e.get("ts"), "event_id": obligation_id,
-                 "type": e.get("type"),
-                 "text": (e.get("text") or "")[:140],
-                 "uncorrelated_gm_messages": len(later_gms)},
+                _ledger_evidence(
+                    e, ledger_ts=e.get("ts"), event_id=obligation_id,
+                    type=e.get("type"),
+                    text=(e.get("text") or "")[:140],
+                    uncorrelated_gm_messages=len(later_gms)),
                 severity=severity, status=status, provenance=provenance))
 
     # R4 missing-cue: after a `turn` ledger event, none of the next
@@ -610,30 +761,17 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
         for e in ledger:
             if e.get("type") != "turn" or not e.get("actor") or e.get("ts") is None:
                 continue
-            gms_after = [r for r in T if _is_gm(r, ch)
-                         and r["ts"] is not None and r["ts"] >= e["ts"]][:k]
-            # per-seat cue policy (v0.3): a seat behind a mention-gated
-            # transport only RECEIVES a cue if the literal mention string is
-            # present — name-in-prose is not deliverable to it. Without a
-            # configured mention string the requirement is unverifiable, so
-            # fall back to name matching (D1: never accuse on ambiguity).
-            seat = (ch.get("seats") or {}).get(e["actor"]) or {}
-            names = [e["actor"]] + list(seat.get("aliases") or [])
-            if seat.get("cue_requires_mention") and seat.get("mention"):
-                cued = any(seat["mention"] in r["content"] for r in gms_after)
-                how = (f"contain the required mention {seat['mention']!r} "
-                       f"(this seat's transport drops name-in-prose)")
-            else:
-                cued = any(_word_in(nm, r["content"])
-                           for nm in names for r in gms_after)
-                how = ("address them by name or alias"
-                       if len(names) > 1 else "address them by name")
-            if gms_after and not cued:
+            # per-seat delivery policy is shared with terminal-incomplete
+            # reporting. Crucially, fewer than k qualifying GM beats are an
+            # open evidence window, not a close-time shortcut to accusation.
+            gms_after, cued, how = _r4_context(T, ch, e, k)
+            if len(gms_after) == k and not cued:
                 findings.append(_finding(
                     "R4", f"cue_within_gm_messages={k}",
-                    f"turn began for {e['actor']} but the next {len(gms_after)} GM "
+                    f"turn began for {e['actor']} but the next {k} GM "
                     f"message(s) never {how}",
-                    {"actor": e["actor"], "ledger_ts": e["ts"]}))
+                    _ledger_evidence(
+                        e, actor=e["actor"], ledger_ts=e["ts"])))
 
     # R5 deliberately has no evaluator. Actor != turn owner is coordination
     # context, not evidence that an action was illegal or that anyone violated
@@ -657,37 +795,36 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                     redacted=True))
 
     # R7 dead-air: a player message followed by a measurable GM gap beyond
-    # threshold (needs timestamps; both bounding messages must exist).
+    # threshold (needs timestamps plus a GM response or evaluation horizon).
     if "R7" in enabled:
         limit = th.get("dead_air_seconds", 300)
         for r in T:
             if _is_gm(r, ch) or _is_dice(r, ch) or _is_ooc(r, ch) or r["ts"] is None:
                 continue
-            # The first subsequent GM beat bounds the wait.  If that beat has
-            # no timestamp, a later timestamped beat cannot safely stand in
-            # for it without risking a false accusation.
-            nxt = next((x for x in T[r["i"] + 1:] if _is_gm(x, ch)), None)
-            gap = (nxt["ts"] - r["ts"]) if nxt and nxt["ts"] is not None else \
-                  ((now - r["ts"]) if (now is not None and not closed) else None)
+            nxt = next((x for x in T[r["i"] + 1:]
+                        if _is_gm(x, ch) and x.get("ts") is not None), None)
+            gap = (nxt["ts"] - r["ts"]) if nxt else \
+                  ((now - r["ts"]) if now is not None else None)
             if gap is None or gap <= limit:
                 continue
             # v0.4 yielded-floor exemption: a GM holding back while players
             # talk is craft, not absence. Dead air requires a QUIET table.
-            if ch.get("dead_air_requires_quiet_table", True):
-                end_ts = nxt["ts"] if nxt else (now if now is not None else None)
-                between = [x for x in T[r["i"] + 1:]
-                           if x["ts"] is not None
-                           and (end_ts is None or x["ts"] < end_ts)
-                           and not _is_gm(x, ch) and not _is_dice(x, ch)]
-                if len(between) >= th.get("quiet_table_max_messages", 3):
-                    continue
-            if True:
-                findings.append(_finding(
-                    "R7", f"dead_air_seconds={limit}",
-                    (f"GM took {int(gap)}s to respond after "
-                     if nxt else f"GM silent for {int(gap)}s (ongoing) after ")
-                    + f"{r['author']}'s message",
-                    _excerpt(r)))
+            end_ts = nxt["ts"] if nxt else now
+            if _r7_yielded_floor(T, ch, r, end_ts):
+                continue
+            if nxt:
+                lead = f"GM took {int(gap)}s to respond after "
+            elif closed:
+                lead = f"GM silent for {int(gap)}s at session close after "
+            else:
+                lead = f"GM silent for {int(gap)}s (ongoing) after "
+            findings.append(_finding(
+                "R7", f"dead_air_seconds={limit}",
+                lead + f"{r['author']}'s message", _excerpt(r)))
+
+    # Duplicate delivery of the same source obligation is idempotent. Do this
+    # before R8 so session-end counts cannot be inflated by redelivery.
+    findings = _dedupe_findings(findings)
 
     # R8 unresolved-session-end: derive from the current obligation state, not
     # an arbitrary transcript quartile.  Uncertain legacy inferences remain
@@ -705,9 +842,11 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                 {"open": [f["rule"] for f in open_obligations],
                  "obligation_ids": [f.get("evidence", {}).get("obligation_id")
                                     or f.get("evidence", {}).get("event_id")
-                                    for f in open_obligations]}))
+                                    for f in open_obligations],
+                 "finding_ids": [f["finding_id"] for f in open_obligations]}))
 
     findings = _finalize_findings(findings, ch)
+    findings = _dedupe_findings(findings)
     return findings, (1 if findings else 0)
 
 
@@ -789,8 +928,7 @@ def _eligible_rules(transcript, charter, ledger, mode, now):
                                 in transcript[row["i"] + 1:]
                                 if _is_gm(candidate, charter)), None)
                 if ((next_gm is not None and next_gm["ts"] is not None)
-                        or (next_gm is None and mode == "live"
-                            and now is not None)):
+                        or (next_gm is None and now is not None)):
                     compatible = True
                     break
             if compatible:
@@ -849,6 +987,11 @@ def evaluate(transcript, charter, ledger=None, mode="closed", now=None):
                               messages=len(normalized_transcript or []),
                               charter=normalized_charter)
 
+    normalized_transcript = _dedupe_rows(normalized_transcript, "transcript")
+    for index, row in enumerate(normalized_transcript):
+        row["i"] = index
+    normalized_ledger = _dedupe_rows(normalized_ledger, "ledger")
+
     incomplete = []
     if not normalized_transcript:
         incomplete.append(issue("transcript.empty", "/transcript",
@@ -857,8 +1000,10 @@ def evaluate(transcript, charter, ledger=None, mode="closed", now=None):
         incomplete.append(issue(
             "transcript.no_effective_content", "/transcript",
             "the transcript contains no nonempty message content"))
-    elif not any(_is_gm(row, normalized_charter)
-                 for row in normalized_transcript):
+    elif (not any(_is_gm(row, normalized_charter)
+                  for row in normalized_transcript)
+          and not (normalized_now is not None
+                   and "R7" in normalized_charter["rules_enabled"])):
         incomplete.append(issue(
             "evidence.gm_unobserved", "/transcript",
             "none of the configured GM authors appears in the transcript"))

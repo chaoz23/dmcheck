@@ -4,10 +4,12 @@
   "description": "Deterministic conduct verdicts for live tabletop sessions. Input: a strict UTF-8 transcript (JSONL {ts,author,content,id?,audience?,correlation_id?,roll_id?} or Discord-API JSON array), an optional engine ledger, and a versioned table charter. Output: a typed EvaluationResult whose findings cite the violated charter rule, effective policy, provenance, and redacted evidence. Explicit source references correlate obligations; text-only ambiguity is silent or explicitly low-confidence advisory, never a definite accusation, while unusable evidence fails closed.",
   "install": "pip install dmcheck  (or: uvx dmcheck ...)",
   "commands": {
-    "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f]": "referee the session; findings as JSON",
+    "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f] [--evaluation-ts n]": "referee or exactly replay the session; findings as JSON",
+    "dmcheck watch <transcript> --gm <name> [--ledger f] [--follow]": "follow transcript and ledger JSONL; emit stable finding lifecycle and source-health events",
     "dmcheck rules": "the active rule set plus the retired R5 compatibility id, with definitions",
     "dmcheck --schema": "machine-readable I/O contract"
   },
+  "lifecycle": "Each finding has a deterministic finding_id. session_end returns the typed closed evaluation plus incomplete obligations and source coverage.",
   "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
   "result_status": ["clean", "findings", "invalid", "incomplete"],
   "schemas": ["dmcheck/charter.schema.json", "dmcheck/transcript.schema.json", "dmcheck/ledger.schema.json", "dmcheck/evaluation-result.schema.json"],

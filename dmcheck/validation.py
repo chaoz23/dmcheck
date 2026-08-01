@@ -27,8 +27,7 @@ DEFAULT_CHARTER_RELEASES = {
         "sha256:e3164d80180e6a5f24c5d2552a4e7901de28706f20f5ae03199457cd45709938",
 }
 
-_STRING_LIST_FIELDS = ("gm", "players", "dice_authors", "ooc_markers",
-                       "hidden_terms")
+_STRING_LIST_FIELDS = ("gm", "players", "dice_authors", "ooc_markers")
 _INTEGER_THRESHOLDS = ("answer_within_messages", "roll_ack_within_messages",
                        "cue_within_gm_messages", "quiet_table_max_messages")
 _DURATION_THRESHOLDS = ("dead_air_seconds",)
@@ -246,6 +245,46 @@ def normalize_charter(raw, require_gm=False, verify_digest=True):
 
     for field in _STRING_LIST_FIELDS:
         charter[field] = _string_list(charter.get(field), field, problems)
+    hidden = charter.get("hidden_terms")
+    normalized_hidden = []
+    hidden_ids = set()
+    if not isinstance(hidden, list):
+        problems.append(issue("charter.type", "/hidden_terms",
+                              "hidden_terms must be an array"))
+    else:
+        for index, item in enumerate(hidden):
+            pointer = f"/hidden_terms/{index}"
+            if isinstance(item, str) and item.strip() and _valid_unicode(item):
+                normalized_hidden.append(item)
+                continue
+            if not isinstance(item, dict):
+                problems.append(issue(
+                    "charter.type", pointer,
+                    "hidden term must be a nonempty string or {id, value}"))
+                continue
+            unknown = set(item) - {"id", "value", "term"}
+            if unknown:
+                problems.append(issue("charter.unknown_key", pointer,
+                                      "unknown hidden-term key %r" %
+                                      sorted(unknown)[0]))
+            secret_id = item.get("id")
+            value = item.get("value", item.get("term"))
+            if not isinstance(secret_id, str) or not secret_id.strip():
+                problems.append(issue("charter.type", pointer + "/id",
+                                      "hidden term id must be nonempty"))
+            elif secret_id in hidden_ids:
+                problems.append(issue("charter.duplicate", pointer + "/id",
+                                      "hidden term ids must be unique"))
+            else:
+                hidden_ids.add(secret_id)
+            if not isinstance(value, str) or not value.strip() \
+                    or not _valid_unicode(value):
+                problems.append(issue("charter.type", pointer + "/value",
+                                      "hidden term value must be nonempty"))
+            if isinstance(secret_id, str) and secret_id.strip() \
+                    and isinstance(value, str) and value.strip():
+                normalized_hidden.append({"id": secret_id, "value": value})
+    charter["hidden_terms"] = normalized_hidden
     if require_gm and not charter["gm"]:
         problems.append(issue("charter.gm.empty", "/gm",
                               "at least one GM author is required"))
@@ -513,7 +552,43 @@ def normalize_transcript(raw):
                 problems.append(issue("timestamp.conflict", pointer,
                                       "ts and timestamp identify different instants"))
         if author is not None and content is not None:
-            rows.append({"ts": ts, "author": author, "content": content})
+            row = {"ts": ts, "author": author, "content": content}
+            raw_author = message.get("author")
+            referenced = message.get("referenced_message")
+            optional = {
+                "id": message.get("id") or message.get("message_id"),
+                "source_id": message.get("source_id"),
+                "author_id": (message.get("author_id") or
+                              (raw_author.get("id")
+                               if isinstance(raw_author, dict) else None)),
+                "is_bot": (message.get("is_bot") if "is_bot" in message else
+                           (raw_author.get("bot")
+                            if isinstance(raw_author, dict) else None)),
+                "event_type": (message.get("event_type") or message.get("kind")
+                               or message.get("message_type")),
+                "reply_to": (message.get("reply_to") or
+                             message.get("reference_id") or
+                             (referenced.get("id")
+                              if isinstance(referenced, dict) else None)),
+                "correlation_id": message.get("correlation_id"),
+                "obligation_id": message.get("obligation_id"),
+                "roll_id": message.get("roll_id"),
+                "audience": message.get("audience"),
+            }
+            for key, value in optional.items():
+                if value is None:
+                    continue
+                valid = isinstance(value, bool) if key == "is_bot" else (
+                    isinstance(value, str) or
+                    (key == "audience" and isinstance(value, list)
+                     and all(isinstance(item, str) for item in value)))
+                if not valid:
+                    problems.append(issue(
+                        "transcript.optional_type", pointer + "/" + key,
+                        f"{key} has an invalid type"))
+                else:
+                    row[key] = value
+            rows.append(row)
 
     if problems:
         raise InputValidationError(problems)
@@ -570,6 +645,16 @@ def normalize_ledger(raw):
             text = None
         ts = _timestamp(event.get("ts"), pointer + "/ts", problems)
         normalized = {"ts": ts, "type": kind}
+        for key in ("id", "source_id", "event_id", "correlation_id",
+                    "obligation_id"):
+            value = event.get(key)
+            if value is not None:
+                if not isinstance(value, str) or not value:
+                    problems.append(issue("ledger.optional_type",
+                                          pointer + "/" + key,
+                                          f"{key} must be a nonempty string"))
+                else:
+                    normalized[key] = value
         if actor is not None:
             normalized["actor"] = actor
         if text is not None:

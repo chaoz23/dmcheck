@@ -20,7 +20,7 @@ $ dmcheck run session.jsonl --gm "Greta"
  "mode": "closed",
  "messages": 9,
  "findings": [
-  {"rule": "R2", "summary": "unconsumed-roll: a dice result got no correlated GM narration within threshold",
+  {"finding_id": "r2-…", "rule": "R2", "summary": "unconsumed-roll: a dice result got no correlated GM narration within threshold",
    "charter": "roll_ack_within_messages=4; correlation=explicit",
    "detail": "dice result from DiceBot received no correlated GM narration within 4 messages",
    "evidence": {"index": 6, "author": "DiceBot", "obligation_id": "roll-42"},
@@ -70,6 +70,9 @@ visible in the event stream but never invoke the hook. dmcheck itself never post
 At session end a closed-mode pass runs. `session_end.open` and `open_count`
 report actionable source-observed findings only; they exclude the R8 aggregate
 and inferred advisories.
+Finding IDs are deterministic across mutable elapsed-time detail, and file
+followers emit typed source-health events when rotation, truncation, partial
+rows, or ordering gaps make coverage incomplete.
 
 ```console
 $ your-chat-fetcher | dmcheck watch - --gm "Rob" --notify-cmd 'notify-dm.sh'

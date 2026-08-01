@@ -37,6 +37,9 @@ SCHEMA = {
     "ledger": "optional JSONL of {ts, type: turn|act|event, id?, actor?, text?}; event IDs correlate narration; actor/turn order never establishes action legality",
     "charter": "schema-versioned JSON config; canonical packaged default is dmcheck/default_charter.json; charter.gm is REQUIRED",
     "authority": "dmcheck evaluates conduct/communication only; upstream authority and the DM/table decide action legality; srdcheck is advisory",
+    "findings": "each finding has a deterministic finding_id; mutable detail never changes lifecycle identity",
+    "terminal": "session end reports typed evaluation state plus incomplete obligations and source coverage",
+    "evaluation_ts": "optional Unix-seconds horizon for exact replay of time-based findings",
     "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
     "result": {"schema_version": "1.0",
                "evaluation_commands": ["run", "watch", "mcp.run", "direct.evaluate"],
@@ -69,6 +72,8 @@ def main(argv=None):
     ap.add_argument("--scene", default="SOCIAL", help="craft: COMBAT|SOCIAL|EXPLORATION")
     ap.add_argument("--pc", action="append", help="craft: PC name (repeatable) for voiced-PC detection")
     ap.add_argument("--notify-cmd", help="watch: shell command fired per source-observed OPEN finding (finding JSON on stdin)")
+    ap.add_argument("--evaluation-ts", type=float,
+                    help="run: explicit Unix-seconds evaluation horizon")
     ap.add_argument("--version", action="version", version="dmcheck 0.5.4")
     a = ap.parse_args(argv)
 
@@ -234,7 +239,8 @@ def main(argv=None):
         ])
     result = evaluate_paths(
         a.transcript, charter_path=a.charter, ledger_path=a.ledger,
-        gm=a.gm, dice_authors=a.dice_bot, mode="closed")
+        gm=a.gm, dice_authors=a.dice_bot, mode="closed",
+        now=a.evaluation_ts)
     print(json.dumps(result.to_dict(), indent=1))
     return result.exit_code
 

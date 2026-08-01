@@ -14,7 +14,9 @@ def _rows(rows):
 
 
 CH = {"gm": ["OCE"], "dice_authors": [], "ooc_markers": [], "hidden_terms": [],
-      "thresholds": {}, "rules_enabled": ["R4"],
+      # These tests isolate transport policy, not the threshold window. A
+      # one-beat charter makes an absent cue provable after that one beat.
+      "thresholds": {"cue_within_gm_messages": 1}, "rules_enabled": ["R4"],
       "seats": {"Shalia": {"cue_requires_mention": True, "mention": "<@42>"}}}
 
 

@@ -20,3 +20,6 @@ invalid, or incomplete; invalid/incomplete always exit 2 with stable error
 codes and JSON pointers. Empty evidence, an unobserved configured GM, and zero
 eligible rules never report clean. Packaged charter/transcript/ledger/result
 schemas and the canonical charter digest are included in the wheel.
+Findings have stable finding_id values. watch follows transcript and ledger
+JSONL, commits newline-terminated rows, and emits source_health when coverage
+is incomplete; terminal output retains the typed fail-closed envelope.

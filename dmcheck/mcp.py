@@ -26,7 +26,9 @@ TOOLS = [
                 "description": "GM author name(s); overrides charter.gm"},
          "dice_authors": {"type": "array", "items": {"type": "string"},
                           "description": "Dice author name(s); overrides "
-                                         "charter.dice_authors"}},
+                                         "charter.dice_authors"},
+         "evaluation_ts": {"type": "number",
+                           "description": "Optional Unix-seconds replay horizon"}},
          "required": ["transcript_path"]}},
     {"name": "rules", "description": "The rule set with one-line definitions.",
      "inputSchema": {"type": "object", "additionalProperties": False,
@@ -52,7 +54,7 @@ def _call(name, args):
                   "tool arguments must be an object")
         ]).to_dict()
     unknown = set(args) - {"transcript_path", "charter_path", "ledger_path",
-                           "gm", "dice_authors"}
+                           "gm", "dice_authors", "evaluation_ts"}
     if unknown:
         key = sorted(unknown, key=str)[0]
         return invalid_result([
@@ -76,7 +78,7 @@ def _call(name, args):
         path, charter_path=args.get("charter_path"),
         ledger_path=args.get("ledger_path"), gm=args.get("gm"),
         dice_authors=args.get("dice_authors"),
-        mode="closed")
+        mode="closed", now=args.get("evaluation_ts"))
     return result.to_dict()
 
 
