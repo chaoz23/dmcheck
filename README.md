@@ -32,7 +32,7 @@ $ dmcheck run session.jsonl --gm "Greta"
 
 Transcript formats: UTF-8 JSONL of `{ts, author, content}`, or a JSON array of Discord-API-shaped messages (`{timestamp, author: {username}, content}`) in chronological or reverse-chronological order. Authors and content are strings. A supplied timestamp must be a finite nonnegative epoch number or a timezone-aware ISO-8601 string; malformed timestamps are rejected rather than silently disabling time-based rules.
 
-## The rule set (each one paid for by a real table failure)
+## The rule set (seven active rules; one retired compatibility id)
 
 | Rule | Fires when | Origin story |
 |---|---|---|
@@ -40,12 +40,21 @@ Transcript formats: UTF-8 JSONL of `{ts, author, content}`, or a JSON array of D
 | R2 | a dice result was never followed by any GM message | "did I hit?" — a player's successful attack roll sat unacknowledged |
 | R3 | an engine event was never narrated to the table | the state engine resolved a hit the table never heard about |
 | R4 | a turn began and the GM never addressed the actor by name | "isn't it her turn?" — asked by a player, which is one player too many |
-| R5 | someone acted out of initiative (needs the ledger) | engine rejected it silently; the table never knew |
+| R5 | **retired; never fires** | actor != turn owner falsely accused legal Reactions and interrupts |
 | R6 | a configured hidden term appeared in a GM message | a module's secret state names leaked into narration |
 | R7 | GM dead air beyond threshold while a player waited | 30 seconds reads as thinking; five minutes reads as absence |
 | R8 | the session ended with open R1–R3 findings in its tail | sessions should end in a defined state — that's what makes the next one possible |
 
-These came from running a hybrid table — human and AI players, an AI GM — on Discord, where every one of these failures actually happened and got codified the same week. They apply equally to human GMs: run dmcheck over your own exported game log and see what your table's transcript says.
+The active rules came from running a hybrid table — human and AI players, an AI GM — on Discord, where these failures actually happened and got codified the same week. They apply equally to human GMs: run dmcheck over your own exported game log and see what your table's transcript says.
+
+R5 remains addressable only so old charters and agent integrations do not
+break. It has no evaluator and is not enabled by default: an actor differing
+from the turn owner can describe a Reaction, a Ready trigger, an opportunity
+attack, a legendary or lair action, a controlled creature, an environmental
+actor, or another system's interrupt. The ledger does not establish legality.
+Any replacement based on an explicit authoritative decision is deferred to
+the shared PORT-002 event contract; dmcheck will evaluate only the resulting
+communication or recovery obligation.
 
 ## Live mode (0.2): the referee sits AT the table
 
@@ -96,8 +105,8 @@ Direct API callers can use `apply_charter_overrides(load_charter(), gm=["Rob"])`
 
 ## What it does NOT do (on purpose)
 
-- **No rules adjudication** — whether the attack was *legal* is [srdcheck](https://github.com/chaoz23/srdcheck)'s job.
-- **No character math** — that's [charactercheck](https://github.com/chaoz23/charactercheck). (srdcheck judges the rules, charactercheck derives the actor, dmcheck referees the table.)
+- **No rules adjudication** — [srdcheck](https://github.com/chaoz23/srdcheck) may provide cited, advisory rules analysis; the authorized upstream engine plus the DM/table's policy and ruling decide whether an action is legal. dmcheck evaluates only table conduct and communication.
+- **No character math** — that's [charactercheck](https://github.com/chaoz23/charactercheck). (charactercheck derives the actor; dmcheck referees the table.)
 - **No narrative-quality judging** — whether the prose was *good* is taste, and taste is not checkable. dmcheck checks procedure only.
 - **No model calls, no scores** — deterministic findings per rule, never a blended "DM grade."
 
@@ -137,7 +146,9 @@ cue, and was provably undeliverable — R4 passed on it. Never again.
 `{ts, type: turn|act|event, actor, text}` — one line per engine event. No
 lightweight OSS session-ledger existed when we surveyed (2026-07-26), so
 this format is the interchange standard our stack shares: engines tap their
-logs into it; `run`, `watch`, and settlement all consume it.
+logs into it; `run`, `watch`, and settlement all consume it. `actor` and
+`turn` are coordination context only; their mismatch is never proof of an
+illegal action or a conduct violation.
 
 
 ## Evidence bars (v0.4)

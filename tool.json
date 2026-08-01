@@ -5,12 +5,12 @@
   "install": "pip install dmcheck  (or: uvx dmcheck ...)",
   "commands": {
     "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f]": "referee the session; findings as JSON",
-    "dmcheck rules": "the rule set (R1-R8) with definitions",
+    "dmcheck rules": "the active rule set plus the retired R5 compatibility id, with definitions",
     "dmcheck --schema": "machine-readable I/O contract"
   },
   "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
   "result_status": ["clean", "findings", "invalid", "incomplete"],
   "schemas": ["dmcheck/charter.schema.json", "dmcheck/transcript.schema.json", "dmcheck/ledger.schema.json", "dmcheck/evaluation-result.schema.json"],
   "mcp": {"command": "dmcheck-mcp", "tools": ["run", "rules"]},
-  "boundaries": "Table PROCEDURE only: no rules adjudication (srdcheck), no character math (charactercheck), no narrative-quality judging (taste is not checkable), no model calls anywhere."
+  "boundaries": "Table conduct and communication only: never action legality. srdcheck is advisory; authorized upstream state plus the DM/table decide. No character math (charactercheck), narrative-quality judging (taste is not checkable), or model calls."
 }

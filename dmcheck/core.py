@@ -10,6 +10,7 @@ Design contract (D1–D5):
 - Every finding cites its rule id and the charter values it was judged against.
 - The charter is config, not code. The verdict path is model-free.
 - No aggregate "DM score" exists anywhere in this package.
+- dmcheck evaluates table conduct and communication, never action legality.
 """
 
 from dataclasses import dataclass, field
@@ -32,11 +33,19 @@ RULES = {
     "R2": "unconsumed-roll: a dice result was never followed by any GM message",
     "R3": "unnarrated-event: an engine event newer than the last GM message (never told to the table)",
     "R4": "missing-cue: a turn began and the next GM messages never addressed the actor by name",
-    "R5": "out-of-initiative: a ledger action by an actor whose turn it was not",
+    "R5": "retired compatibility id: actor/turn ownership never establishes action legality",
     "R6": "spoiler-leak: a configured hidden term appeared in a GM message",
     "R7": "dead-air: GM silence beyond threshold while a player waited",
     "R8": "unresolved-session-end: the transcript ends with open R1/R2/R3 findings in its tail",
 }
+
+# R5 remains addressable so existing charters and agent integrations do not
+# break, but it is intentionally absent from defaults and has no evaluator.
+# Actor != turn owner is compatible with legal Reactions, Ready triggers,
+# legendary/lair actions, controlled creatures, and other interrupts.  Any
+# future authoritative decision event belongs to the portfolio contract;
+# dmcheck must only evaluate the resulting conduct/communication obligation.
+DEFAULT_RULES = tuple(rule for rule in RULES if rule != "R5")
 
 
 # Loading and normalization are imported from ``validation``.  There is one
@@ -166,7 +175,7 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
     T = transcript
     th = ch["thresholds"]
     findings = []
-    enabled = set(ch.get("rules_enabled", list(RULES)))
+    enabled = set(ch.get("rules_enabled", list(DEFAULT_RULES)))
     gm_idx = [r["i"] for r in T if _is_gm(r, ch)]
     # R1 unanswered-player: a non-GM, non-dice message containing a question,
     # with NO GM message in the next `answer_within_messages` messages.
@@ -265,20 +274,10 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                     f"message(s) never {how}",
                     {"actor": e["actor"], "ledger_ts": e["ts"]}))
 
-    # R5 out-of-initiative: ledger `act` whose actor differs from the actor of
-    # the most recent `turn` event.
-    if "R5" in enabled and ledger:
-        current = None
-        for e in ledger:
-            if e.get("type") == "turn":
-                current = e.get("actor")
-            elif e.get("type") == "act" and current and e.get("actor") \
-                    and e["actor"] != current:
-                findings.append(_finding(
-                    "R5", "ledger turn order",
-                    f"{e['actor']} acted during {current}'s turn",
-                    {"actor": e["actor"], "turn_of": current,
-                     "text": (e.get("text") or "")[:140]}))
+    # R5 deliberately has no evaluator. Actor != turn owner is coordination
+    # context, not evidence that an action was illegal or that anyone violated
+    # table procedure. Do not infer an authority decision from today's lossy
+    # ledger.
 
     # R6 spoiler-leak: hidden terms in GM messages (whole word).
     if "R6" in enabled:
@@ -398,20 +397,10 @@ def _eligible_rules(transcript, charter, ledger, mode, now):
                 reason = _skip(rule, "timestamped_turn.unavailable",
                                "R4 requires a timestamped turn and GM message")
         elif rule == "R5":
-            current = None
-            compatible = False
-            for event in ledger:
-                if event.get("type") == "turn" and event.get("actor"):
-                    current = event["actor"]
-                elif (event.get("type") == "act" and event.get("actor")
-                      and current is not None):
-                    compatible = True
-                    break
-            if compatible:
-                eligible.append(rule)
-            else:
-                reason = _skip(rule, "turn_ledger.unavailable",
-                               "R5 requires actor-bearing turn and act events")
+            reason = _skip(
+                rule, "rule.retired",
+                "R5 is retired because actor/turn ownership cannot establish "
+                "action legality")
         elif rule == "R6":
             if has_messages and charter["hidden_terms"]:
                 eligible.append(rule)

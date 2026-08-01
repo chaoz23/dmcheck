@@ -23,6 +23,8 @@ DEFAULT_CHARTER_RESOURCE = "default_charter.json"
 DEFAULT_CHARTER_RELEASES = {
     ("1.0", "1.0"):
         "sha256:b90d27a7624c345117a80028e4e07429e15e714698dbf3b1650a323b830c0c34",
+    ("1.0", "1.1"):
+        "sha256:e3164d80180e6a5f24c5d2552a4e7901de28706f20f5ae03199457cd45709938",
 }
 
 _STRING_LIST_FIELDS = ("gm", "players", "dice_authors", "ooc_markers",

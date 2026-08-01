@@ -26,6 +26,7 @@ def test_init_charter_passes_lint(tmp_path, capsys):
     assert main(["lint-charter", str(out)]) == 0
     ch = json.load(open(out))
     assert ch["gm"] == ["OCE"] and ch["rules_enabled"][0] == "R1"
+    assert "R5" not in ch["rules_enabled"]
 
 
 def test_r4_name_in_prose_is_not_a_cue_for_mention_gated_seat():

@@ -35,7 +35,7 @@ class TestMessySession(unittest.TestCase):
         # Mira chats on - nobody was blocked, so the old R1 plant is now
         # correctly a non-violation (naive "?" fired 85x/episode on
         # professional play with 0 valid; D1 chooses silence).
-        self.assertEqual(self.rules, ["R2", "R3", "R4", "R5", "R6", "R7", "R8"])
+        self.assertEqual(self.rules, ["R2", "R3", "R4", "R6", "R7", "R8"])
 
     def test_r1_suppressed_when_asker_moves_on(self):
         # v0.4 evidence bars: Bram's question is GM-directed, but he attacks
@@ -43,10 +43,10 @@ class TestMessySession(unittest.TestCase):
         # True R1 fires live in tests/test_evidence_bars.py.
         self.assertEqual([f for f in self.findings if f["rule"] == "R1"], [])
 
-    def test_r5_names_both_parties(self):
-        r5 = [f for f in self.findings if f["rule"] == "R5"][0]
-        self.assertEqual(r5["evidence"]["actor"], "Bram")
-        self.assertEqual(r5["evidence"]["turn_of"], "Mira")
+    def test_legacy_r5_charter_does_not_infer_action_legality(self):
+        # The fixture charter still names R5 on purpose: old charters must not
+        # reactivate the unsafe actor != turn-owner predicate.
+        self.assertEqual([f for f in self.findings if f["rule"] == "R5"], [])
 
     def test_every_finding_cites_charter(self):
         for f in self.findings:

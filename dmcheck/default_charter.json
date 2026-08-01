@@ -1,8 +1,8 @@
 {
   "$schema": "https://github.com/chaoz23/dmcheck/schemas/charter-1.0.json",
   "schema_version": "1.0",
-  "charter_version": "1.0",
-  "charter_digest": "sha256:b90d27a7624c345117a80028e4e07429e15e714698dbf3b1650a323b830c0c34",
+  "charter_version": "1.1",
+  "charter_digest": "sha256:e3164d80180e6a5f24c5d2552a4e7901de28706f20f5ae03199457cd45709938",
   "description": "Default table charter, derived from the Agent Table Protocol. Every threshold is a table norm you may override.",
   "gm": [],
   "players": [],
@@ -16,7 +16,7 @@
     "cue_within_gm_messages": 3,
     "quiet_table_max_messages": 3
   },
-  "rules_enabled": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"],
+  "rules_enabled": ["R1", "R2", "R3", "R4", "R6", "R7", "R8"],
   "seats": {},
   "question_requires_gm_address": true,
   "dead_air_requires_quiet_table": true,
