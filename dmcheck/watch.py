@@ -13,6 +13,7 @@ import sys
 import time
 
 from .core import evaluate, invalid_result, load_charter, load_ledger, load_transcript
+from .core import redact_output
 from .validation import (InputValidationError, issue, normalize_charter,
                          normalize_ledger,
                          normalize_transcript, parse_json_value)
@@ -27,7 +28,8 @@ class Watcher:
     def __init__(self, charter, ledger=None, notify_cmd=None, emit=None,
                  craft=False, scene="SOCIAL", pcs=()):
         self.notify_cmd = notify_cmd
-        self.emit = emit or (lambda e: print(json.dumps(e), flush=True))
+        sink = emit or (lambda e: print(json.dumps(e), flush=True))
+        self.emit = lambda event: sink(redact_output(event, self.ch or {}))
         self.messages = []
         self.open = {}
         self._fatal = None

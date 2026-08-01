@@ -1,7 +1,7 @@
 {
   "name": "dmcheck",
   "version": "0.1.0",
-  "description": "Deterministic conduct verdicts for live tabletop sessions. Input: a strict UTF-8 session transcript, an optional engine ledger, and a versioned table charter. Output: a typed EvaluationResult; findings cite the violated charter rule with evidence. False accusations are the unforgivable bug: ambiguity produces silence, while unusable evidence fails closed.",
+  "description": "Deterministic conduct verdicts for live tabletop sessions. Input: a strict UTF-8 transcript (JSONL {ts,author,content,id?,audience?,correlation_id?} or Discord-API JSON array), an optional engine ledger, and a versioned table charter. Output: a typed EvaluationResult whose findings cite the violated charter rule, effective policy, provenance, and redacted evidence. Explicit source references correlate obligations; ambiguity produces silence while unusable evidence fails closed.",
   "install": "pip install dmcheck  (or: uvx dmcheck ...)",
   "commands": {
     "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f]": "referee the session; findings as JSON",

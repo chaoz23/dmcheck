@@ -35,7 +35,9 @@ class TestMessySession(unittest.TestCase):
         # Mira chats on - nobody was blocked, so the old R1 plant is now
         # correctly a non-violation (naive "?" fired 85x/episode on
         # professional play with 0 valid; D1 chooses silence).
-        self.assertEqual(self.rules, ["R2", "R3", "R4", "R6", "R7", "R8"])
+        # Legacy text/time-only R2/R3 evidence remains advisory, so R8 does
+        # not promote those untyped inferences into authoritative open state.
+        self.assertEqual(self.rules, ["R2", "R3", "R4", "R6", "R7"])
 
     def test_r1_suppressed_when_asker_moves_on(self):
         # v0.4 evidence bars: Bram's question is GM-directed, but he attacks
@@ -120,12 +122,14 @@ class TestLiveMode(unittest.TestCase):
         finally tells the table."""
         from dmcheck.watch import Watcher
         ch = load_charter(CH)
-        ledger = [{"ts": 1700000200, "type": "event", "text": "guard drops"}]
+        ledger = [{"ts": 1700000200, "type": "event", "id": "evt-guard-drops",
+                   "text": "guard drops"}]
         events = []
         w = Watcher(ch, ledger, emit=events.append)
         w.feed({"ts": 1700000100, "author": "Greta", "content": "The fight rages."})
         w.tick(now=1700000300)
         self.assertTrue(any(e["event"] == "open" and e["rule"] == "R3" for e in events))
         w.feed({"ts": 1700000400, "author": "Greta",
-                "content": "The guard drops in a heap!"}, now=1700000401)
+                "content": "The guard drops in a heap!",
+                "correlation_id": "evt-guard-drops"}, now=1700000401)
         self.assertTrue(any(e["event"] == "resolved" and e["rule"] == "R3" for e in events))

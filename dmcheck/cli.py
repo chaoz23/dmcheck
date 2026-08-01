@@ -17,7 +17,7 @@ import math
 import sys
 
 from . import RULES, evaluate_paths, load_charter
-from .core import invalid_result
+from .core import invalid_result, public_charter, redact_output
 from .validation import (InputValidationError, issue, load_craft_input,
                          normalize_charter)
 
@@ -26,15 +26,15 @@ SCHEMA = {
     "commands": {
         "run": "check a transcript (+ optional --ledger) against a charter; findings as JSON",
         "rules": "list the rule set with one-line definitions",
-        "charter": "print the effective charter (defaults or --charter file) — copy, edit, version it",
+        "charter": "print the effective charter with hidden values redacted; edit the source file to change protected terms",
         "craft": "attention lane: rate statistics vs the professional envelope, ONE attention signal, categorical defects (voiced-PC etc.) - advisory, never a score",
         "init": "bootstrap a new table: write a starter charter + print the session-zero checklist (S1-S8)",
         "watch": "live mode: incremental checking over a growing transcript (tail or stdin JSONL)",
         "lint-charter": "validate a charter file (unknown keys, bad thresholds, seat config)",
         "explain": "one rule in depth: definition, charter knobs, origin story",
     },
-    "transcript": "JSONL of {ts, author, content} OR a JSON array of Discord-API-shaped messages",
-    "ledger": "optional JSONL of {ts, type: turn|act|event, actor?, text?}; actor/turn order never establishes action legality",
+    "transcript": "UTF-8 JSONL of {ts, author, content, id?, audience?, reply_to?, correlation_id?, roll_id?} OR a JSON array of Discord-API-shaped messages",
+    "ledger": "optional JSONL of {ts, type: turn|act|event, id?, actor?, text?}; event IDs correlate narration; actor/turn order never establishes action legality",
     "charter": "schema-versioned JSON config; canonical packaged default is dmcheck/default_charter.json; charter.gm is REQUIRED",
     "authority": "dmcheck evaluates conduct/communication only; upstream authority and the DM/table decide action legality; srdcheck is advisory",
     "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
@@ -84,7 +84,7 @@ def main(argv=None):
                                    dice_authors=a.dice_bot)
         except InputValidationError as exc:
             return _print_invalid(exc.issues)
-        print(json.dumps(charter, indent=1))
+        print(json.dumps(public_charter(charter), indent=1))
         return 0
     if a.command == "craft":
         from .craft import evaluate as evaluate_craft, failure as craft_failure
@@ -104,7 +104,7 @@ def main(argv=None):
             print(json.dumps(result, indent=1))
             return result["exit_code"]
         result = evaluate_craft(raw, a.scene, tuple(a.pc or []), gm_authors)
-        print(json.dumps(result, indent=1))
+        print(json.dumps(redact_output(result, charter), indent=1))
         return result["exit_code"]
     if a.command == "init":
         from datetime import date
@@ -175,7 +175,7 @@ def main(argv=None):
                 "S7": "story lane if running a module (spine/guard init before play)",
                 "S8": "probe the referee once — a clean opening check PASS proves the guard is actually watching",
             },
-            "ledger_format": "JSONL {ts, type: turn|act|event, actor, text} — feed via --ledger; same format dmcheck watch consumes",
+            "ledger_format": "JSONL {ts, type: turn|act|event, id, actor, text}; narration carries correlation_id — feed via --ledger; same format dmcheck watch consumes",
             "next": [f"dmcheck lint-charter {out}",
                      f"dmcheck watch <transcript> --charter {out} --follow"],
         }, indent=1))

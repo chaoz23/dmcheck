@@ -5,7 +5,10 @@ and validated on held-out episodes; R5 is a retired compatibility id because
 actor != turn owner cannot establish action legality. Ambiguity produces
 silence, never accusations. dmcheck evaluates conduct/communication only;
 srdcheck is advisory, while upstream authority and the DM/table decide
-legality. Install: pip install dmcheck. CLI: dmcheck run|watch|craft|
+legality. Preserve source message/event IDs, audience, and correlation IDs:
+unrelated GM text cannot close a typed question, roll, or event. R6 secret
+values and matching excerpts are redacted from CLI/MCP/watch/hook output.
+Install: pip install dmcheck. CLI: dmcheck run|watch|craft|
 init|explain|lint-charter. init --dm bootstraps a new DM (charter +
 session-zero + the nine measured defaults). craft = advisory attention lane:
 rates vs the professional envelope, one signal at a time, categorical defect
