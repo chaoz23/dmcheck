@@ -41,6 +41,8 @@ REQUEST_TOO_LARGE = -33000  # application-defined; outside MCP's reserved band
 TOOL_RATE_LIMITED = -33001  # application-defined; outside reserved bands
 TOOL_CALLS_PER_MINUTE = 120
 TOOL_CALL_BURST = 32
+MAX_TOOL_RETRY_SECONDS = 86_400
+MAX_CONFIGURED_TOOL_BURST = 1_000_000
 
 _LOG_LEVELS = {
     "alert", "critical", "debug", "emergency", "error", "info", "notice",
@@ -526,10 +528,21 @@ class MCPServer:
                 "tool rate must be a finite number") from exc
         if not math.isfinite(normalized_rate) or normalized_rate <= 0:
             raise MCPConfigurationError("tool rate must be a finite number")
+        rate_per_second = normalized_rate / 60.0
+        if not math.isfinite(rate_per_second) or rate_per_second <= 0:
+            raise MCPConfigurationError(
+                "tool rate is too small to produce a finite refill interval")
+        maximum_retry = 1.0 / rate_per_second
+        if (not math.isfinite(maximum_retry)
+                or maximum_retry > MAX_TOOL_RETRY_SECONDS):
+            raise MCPConfigurationError(
+                "tool rate must permit at least one call per 24 hours")
         if (isinstance(tool_burst, bool) or not isinstance(tool_burst, int)
-                or tool_burst <= 0):
-            raise MCPConfigurationError("tool burst must be a positive integer")
-        self._tool_rate_per_second = normalized_rate / 60.0
+                or not 0 < tool_burst <= MAX_CONFIGURED_TOOL_BURST):
+            raise MCPConfigurationError(
+                "tool burst must be a positive integer no greater than %d"
+                % MAX_CONFIGURED_TOOL_BURST)
+        self._tool_rate_per_second = rate_per_second
         self._tool_burst = tool_burst
         self._tool_tokens = float(tool_burst)
         self._clock = clock or time.monotonic

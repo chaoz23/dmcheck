@@ -224,13 +224,17 @@ class TestModernProtocol(unittest.TestCase):
         now[0] = 1.0
         self.assertNotIn("error", call(server, "rules", {}, request_id=4))
 
-        for invalid_rate in (0, -1, True, float("nan"), 1e-324,
-                             10 ** 10_000):
-            with self.subTest(invalid_rate=type(invalid_rate).__name__):
+        invalid_rates = (0, -1, True, float("nan"), 5e-324, 1e-322,
+                         1e-320, 10 ** 10_000)
+        for index, invalid_rate in enumerate(invalid_rates):
+            with self.subTest(invalid_rate_case=index,
+                              invalid_rate_type=type(invalid_rate).__name__):
                 with self.assertRaises(mcp.MCPConfigurationError):
                     mcp.MCPServer(tool_rate_per_minute=invalid_rate)
-        for invalid_burst in (0, -1, True, 1.5):
-            with self.subTest(invalid_burst=invalid_burst):
+        invalid_bursts = (0, -1, True, 1.5, 10 ** 10_000)
+        for index, invalid_burst in enumerate(invalid_bursts):
+            with self.subTest(invalid_burst_case=index,
+                              invalid_burst_type=type(invalid_burst).__name__):
                 with self.assertRaises(mcp.MCPConfigurationError):
                     mcp.MCPServer(tool_burst=invalid_burst)
 

@@ -154,7 +154,10 @@ The synchronous stdio loop admits only one operation at a time. A process-local
 token bucket additionally limits `tools/call` to 120 calls per minute with a
 burst of 32. Exhaustion returns application error `-33001` with
 `retryAfterMs`; this operational admission state does not carry conversation,
-capability, or evaluation context between requests.
+capability, or evaluation context between requests. Embedders may configure
+those values, but a rate slower than one call per 24 hours or a burst above
+1,000,000 is refused at construction so refill and retry calculations remain
+finite and typed.
 
 ## Error ownership
 
