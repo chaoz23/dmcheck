@@ -113,6 +113,18 @@ def main(argv=None):
             json.dump(charter, f, indent=1)
         if a.dm:
             core = os.path.join(os.path.dirname(__file__), "dm_core.md")
+            if not os.path.exists(core):
+                # Packaging defect, not user error. Say so plainly instead of
+                # raising a traceback at someone setting up a table.
+                print(json.dumps({
+                    "error": "packaging-incomplete",
+                    "detail": f"dm_core.md is missing from this install ({core}). "
+                              "The charter was written; DM-CORE.md was not. "
+                              "Reinstall dmcheck>=0.5.5, or fetch DM-CORE.md from "
+                              "https://github.com/chaoz23/dmcheck",
+                    "charter_written": out,
+                }, indent=1))
+                return 2
             with open("DM-CORE.md", "w") as f:
                 f.write(open(core).read())
         print(json.dumps({

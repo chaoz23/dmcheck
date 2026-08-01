@@ -6,4 +6,5 @@ tmp/
 __pycache__/
 *.egg-info/
 dist/
+build/
 .venv/
