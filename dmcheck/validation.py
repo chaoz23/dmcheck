@@ -619,6 +619,24 @@ def _reject_json_constant(value):
     raise ValueError("non-finite JSON number %s" % value)
 
 
+MAX_JSON_NUMBER_CHARACTERS = 128
+
+
+def _bounded_json_int(value):
+    if len(value) > MAX_JSON_NUMBER_CHARACTERS:
+        raise ValueError("JSON integer exceeds numeric token limit")
+    return int(value)
+
+
+def _bounded_json_float(value):
+    if len(value) > MAX_JSON_NUMBER_CHARACTERS:
+        raise ValueError("JSON number exceeds numeric token limit")
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("JSON number is not finite")
+    return parsed
+
+
 def _json_nesting_exceeds(text, maximum=256):
     """Apply one deterministic nesting limit across Python JSON runtimes."""
     depth = 0
@@ -651,7 +669,9 @@ def parse_json_value(text, pointer):
                   "JSON exceeds the maximum nesting depth of 256")
         ])
     try:
-        return json.loads(text, parse_constant=_reject_json_constant)
+        return json.loads(
+            text, parse_constant=_reject_json_constant,
+            parse_int=_bounded_json_int, parse_float=_bounded_json_float)
     except json.JSONDecodeError as exc:
         raise InputValidationError([
             issue("input.invalid_json", pointer,
