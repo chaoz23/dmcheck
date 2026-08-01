@@ -1,4 +1,4 @@
-"""The installed artifact must implement the advertised behaviour.
+"""Built artifacts must contain and implement the reviewed source contract.
 
 dmcheck 0.5.1-0.5.4 shipped wheels without `dmcheck/dm_core.md`, because
 package-data listed only `default_charter.json`. `dmcheck init --dm` therefore
@@ -8,9 +8,12 @@ perfectly in a checkout — the blind spot a cold-install test exists to close.
 Found 2026-08-01 by the srdcheck post-mortem's cross-repo sweep: the identical
 defect class had shipped in two separate packages.
 
-Written as stdlib unittest, not pytest, so it actually runs under this repo's
-`python -m unittest discover` CI. A gate that CI does not execute is decorative.
+The suite builds from a pristine copy, compares wheel and sdist payloads to the
+reviewed tree, cold-runs the wheel, and executes the extracted sdist's included
+tests. Artifact tests require the repository's test/build tooling; they never
+skip merely because CI forgot to install it.
 """
+import email
 import json
 import os
 import pathlib
@@ -19,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tarfile
 import tempfile
 import unittest
 import zipfile
@@ -35,6 +39,7 @@ RUNTIME_DATA = [
     "evaluation-result.schema.json",
     "dm_core.md",
 ]
+SDIST_SELFTEST = os.environ.get("DMCHECK_SDIST_SELFTEST") == "1"
 
 
 def _package_data_entries():
@@ -46,8 +51,8 @@ def _package_data_entries():
     return set(re.findall(r'"([^"]+)"', block.group(1)))
 
 
-def _build_wheel(outdir):
-    """Build from a pristine copy of the tree.
+def _build_distributions(outdir):
+    """Build wheel and sdist from a pristine copy of the tree.
 
     setuptools reuses a stale build/lib/, so a wheel built where a file once
     lived keeps shipping it after package-data stops listing it. Copying to a
@@ -56,21 +61,57 @@ def _build_wheel(outdir):
     src = pathlib.Path(outdir) / "src"
     shutil.copytree(ROOT, src, ignore=shutil.ignore_patterns(
         "build", "dist", "*.egg-info", "__pycache__", ".git", ".venv"))
-    wheelhouse = pathlib.Path(outdir) / "wheelhouse"
-    attempts = [
-        [sys.executable, "-m", "build", "--wheel", "--no-isolation",
-         "--outdir", str(wheelhouse)],
-        [sys.executable, "-m", "build", "--wheel", "--outdir", str(wheelhouse)],
-        [sys.executable, "-m", "pip", "wheel", ".", "--no-deps",
-         "--no-build-isolation", "--wheel-dir", str(wheelhouse)],
-    ]
-    for cmd in attempts:
-        proc = subprocess.run(cmd, cwd=src, capture_output=True, text=True)
-        if proc.returncode == 0:
-            wheels = list(wheelhouse.glob("dmcheck-*.whl"))
-            if wheels:
-                return wheels[0]
-    return None
+    dist = pathlib.Path(outdir) / "dist"
+    proc = subprocess.run(
+        [sys.executable, "-m", "build", "--sdist", "--wheel",
+         "--no-isolation", "--outdir", str(dist)],
+        cwd=src, capture_output=True, text=True)
+    wheels = sorted(dist.glob("*.whl"))
+    sdists = sorted(dist.glob("*.tar.gz"))
+    if proc.returncode or len(wheels) != 1 or len(sdists) != 1:
+        raise AssertionError(
+            "artifact build failed or produced an unexpected archive set\n"
+            f"command exit: {proc.returncode}\nstdout:\n{proc.stdout}\n"
+            f"stderr:\n{proc.stderr}\nfiles: "
+            f"{sorted(p.name for p in dist.glob('*')) if dist.exists() else []}")
+    return wheels[0], sdists[0]
+
+
+def _wheel_files(path):
+    with zipfile.ZipFile(path) as archive:
+        return {name: archive.read(name) for name in archive.namelist()
+                if not name.endswith("/")}
+
+
+def _sdist_files(path):
+    with tarfile.open(path, "r:gz") as archive:
+        files = {}
+        for member in archive.getmembers():
+            if not member.isfile() or "/" not in member.name:
+                continue
+            relative = member.name.split("/", 1)[1]
+            extracted = archive.extractfile(member)
+            if extracted is not None:
+                files[relative] = extracted.read()
+        return files
+
+
+def _reviewed_package_files():
+    return {
+        p.relative_to(ROOT).as_posix(): p.read_bytes()
+        for p in PKG.rglob("*")
+        if p.is_file() and p.suffix != ".pyc"
+    }
+
+
+def _required_sdist_test_files():
+    tests = ROOT / "tests"
+    paths = sorted(tests.glob("test_*.py"))
+    paths.extend(sorted((tests / "fixtures").rglob("*")))
+    return {
+        p.relative_to(ROOT).as_posix(): p.read_bytes()
+        for p in paths if p.is_file()
+    }
 
 
 class TestPackagingContract(unittest.TestCase):
@@ -124,32 +165,61 @@ class TestPackagingContract(unittest.TestCase):
         self.assertEqual(value["schema_version"], "1.0")
 
 
-class TestInstalledArtifact(unittest.TestCase):
-    """Builds a wheel; skips cleanly where no build toolchain exists."""
+@unittest.skipIf(SDIST_SELFTEST, "avoid recursively rebuilding artifacts")
+class TestBuiltArtifacts(unittest.TestCase):
+    """Builds and exercises the exact archives a release would publish."""
 
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.mkdtemp(prefix="dmcheck-pkg-")
-        cls.wheel = _build_wheel(cls._tmp)
+        cls.wheel, cls.sdist = _build_distributions(cls._tmp)
+        cls.wheel_payload = _wheel_files(cls.wheel)
+        cls.sdist_payload = _sdist_files(cls.sdist)
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls._tmp, ignore_errors=True)
 
     def test_wheel_contains_runtime_data(self):
-        if not self.wheel:
-            self.skipTest("wheel build unavailable (needs `build`+`setuptools`)")
-        names = zipfile.ZipFile(self.wheel).namelist()
         for name in RUNTIME_DATA:
             self.assertTrue(
-                any(n.endswith(f"dmcheck/{name}") for n in names),
+                any(n.endswith(f"dmcheck/{name}")
+                    for n in self.wheel_payload),
                 f"wheel omits {name} — installed users will crash")
+
+    def test_wheel_and_sdist_package_payloads_match_source(self):
+        for relative, expected in _reviewed_package_files().items():
+            self.assertIn(relative, self.wheel_payload,
+                          f"wheel omits reviewed source file {relative}")
+            self.assertEqual(self.wheel_payload[relative], expected,
+                             f"wheel content drifted for {relative}")
+            self.assertIn(relative, self.sdist_payload,
+                          f"sdist omits reviewed source file {relative}")
+            self.assertEqual(self.sdist_payload[relative], expected,
+                             f"sdist content drifted for {relative}")
+
+    def test_sdist_contains_tests_and_fixture_bytes(self):
+        for relative, expected in _required_sdist_test_files().items():
+            self.assertIn(relative, self.sdist_payload,
+                          f"sdist omits release self-test input {relative}")
+            self.assertEqual(self.sdist_payload[relative], expected,
+                             f"sdist test input drifted for {relative}")
+
+    def test_wheel_uses_pep639_license_metadata(self):
+        metadata_names = [name for name in self.wheel_payload
+                          if name.endswith(".dist-info/METADATA")]
+        self.assertEqual(len(metadata_names), 1)
+        metadata = email.message_from_bytes(
+            self.wheel_payload[metadata_names[0]])
+        self.assertEqual(metadata.get("License-Expression"), "MIT")
+        self.assertEqual(set(metadata.get_all("License-File", [])),
+                         {"LICENSE", "NOTICE"})
+        self.assertIsNone(metadata.get("License"),
+                          "legacy free-text License metadata must not return")
 
     def test_cold_installed_wheel_serves_init_dm(self):
         """The regression gate for 0.5.1-0.5.4: install into an empty
         environment and run `init --dm` from outside the repo."""
-        if not self.wheel:
-            self.skipTest("wheel build unavailable (needs `build`+`setuptools`)")
         venv = pathlib.Path(self._tmp) / "venv"
         subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
         win = sysconfig.get_platform().startswith("win")
@@ -240,6 +310,27 @@ class TestInstalledArtifact(unittest.TestCase):
             response["result"]["_meta"][
                 "io.modelcontextprotocol/serverInfo"]["version"],
             manifest["version"])
+
+    def test_extracted_sdist_passes_its_included_suite(self):
+        extracted = pathlib.Path(self._tmp) / "sdist"
+        extracted.mkdir()
+        for relative, content in self.sdist_payload.items():
+            archive_path = pathlib.PurePosixPath(relative)
+            self.assertFalse(archive_path.is_absolute())
+            self.assertNotIn("..", archive_path.parts)
+            target = extracted.joinpath(*archive_path.parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        env = os.environ.copy()
+        env["DMCHECK_SDIST_SELFTEST"] = "1"
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "--strict-markers"],
+            cwd=extracted, env=env, capture_output=True, text=True)
+        self.assertEqual(
+            proc.returncode, 0,
+            f"extracted sdist suite failed ({proc.returncode}):\n"
+            f"{proc.stdout}\n{proc.stderr}")
 
 
 if __name__ == "__main__":

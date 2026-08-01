@@ -1,33 +1,29 @@
 name: ci
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.10", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Build tooling (packaging gate only — runtime stays stdlib)
-        # tests/test_packaging.py builds a wheel and cold-installs it. Without
-        # these it skips silently, and the gate that catches a broken release
-        # never runs. dmcheck itself still has zero runtime dependencies.
-        run: pip install build setuptools
-      - name: Tests (stdlib runtime; packaging gate included)
-        run: python -m unittest discover -s tests -v
-      - name: Installed artifact serves init --dm
-        # Belt and braces: fail loudly if the packaging gate was skipped rather
-        # than passed, so a missing toolchain can never read as green.
-        run: |
-          python -m unittest discover -s tests -v 2>&1 | tee /tmp/t.log
-          grep -q "test_cold_installed_wheel_serves_init_dm" /tmp/t.log
-          if grep -qi "skipped" /tmp/t.log; then
-            echo "::error::a packaging test skipped — the release gate did not run"
-            exit 1
-          fi
+      - name: Install test and build tooling
+        # dmcheck remains dependency-free at runtime. These dependencies make
+        # the test and artifact gates mandatory rather than silently skipped.
+        run: python -m pip install --upgrade "setuptools>=77" wheel build pytest
+      - name: Assert complete pytest collection
+        run: python scripts/assert_test_collection.py
+      - name: Complete test and artifact suite
+        run: python -m pytest -q --strict-markers
       - name: Referee the fixture sessions
         run: |
           python -m dmcheck.cli run tests/fixtures/clean-session.jsonl --charter tests/fixtures/charter.json
