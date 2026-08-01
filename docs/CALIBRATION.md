@@ -25,10 +25,28 @@ The naive rules produced **85 findings in a single episode — zero valid.**
 - R7 exempts the **yielded floor**: dead air requires a quiet table.
 - R4 recognizes **in-fiction cues**: professionals cue players by *character*
   name (clear majority to dominant of all naming), so seats carry aliases.
-- One narrowing, stated plainly: R1 no longer fires when another player
-  answers in the GM's place — at a busy table that is textually
+- One narrowing, stated plainly: an inferred/text-only R1 no longer fires when
+  another player answers in the GM's place — at a busy table that is textually
   indistinguishable from banter, and D1 chooses silence over an unprovable
-  accusation.
+  accusation. Explicit audience plus an immutable obligation ID remains open
+  through unrelated concurrent player activity.
+
+## Correlation and privacy containment
+
+Text proximity cannot prove that one message answers another. When an adapter
+preserves immutable source IDs, audience, and reply/correlation references,
+R1–R3 use those facts: unrelated GM chatter cannot close a question, roll, or
+engine event. Explicit public/player audience is not a GM obligation. Legacy
+text-only question and roll recognition remains inferred/advisory; when a
+later GM message makes the outcome ambiguous, D1 chooses silence. The typed
+evaluation envelope must separately report that observation gap, so silence is
+not promoted to proof of complete coverage.
+
+R6 output never includes a configured hidden value or its matching excerpt.
+Charters may assign opaque IDs to protected terms; every ordinary CLI, MCP,
+watch, hook, and finding path exposes only those IDs. The emitted charter
+digest intentionally covers public policy with hidden values withheld. It is
+not a host attestation or a commitment to the secret values.
 
 ## Held-out validation
 

@@ -1,11 +1,33 @@
 # dmcheck
 Deterministic conduct verdicts for live tabletop sessions — CI for running a
-game. Eight rules calibrated against 134 hours of professional play and
-validated on held-out episodes; ambiguity produces silence, never
-accusations. Install: pip install dmcheck. CLI: dmcheck run|watch|craft|
+game. Seven active rules calibrated against 134 hours of professional play
+and validated on held-out episodes; R5 is a retired compatibility id because
+actor != turn owner cannot establish action legality. Ambiguity produces
+silence, never accusations. dmcheck evaluates conduct/communication only;
+srdcheck is advisory, while upstream authority and the DM/table decide
+legality. Ambiguity is silent or explicitly marked as a low-confidence
+advisory, never promoted to a definite accusation. Preserve source message/event IDs, audience, and correlation IDs:
+unrelated GM text cannot close a typed question, roll, or event. R6 secret
+values and matching excerpts are redacted from CLI/MCP/watch/hook output.
+Install: pip install dmcheck. CLI: dmcheck run|watch|craft|
 init|explain|lint-charter. init --dm bootstraps a new DM (charter +
 session-zero + the nine measured defaults). craft = advisory attention lane:
 rates vs the professional envelope, one signal at a time, categorical defect
-checks, no score ever. MCP server: io.github.chaoz23/dmcheck. Ask it: "did
-the GM leave questions hanging", "watch this session live", "is my line
-length in the professional band".
+checks, no score ever. This source tree's MCP 0.6.0 contract is UNRELEASED;
+public 0.5.5 predates it. Install the checkout with pip install . to test it.
+MCP server: io.github.chaoz23/dmcheck; modern stateless MCP 2026-07-28 over
+stdio, batch only, tools run + rules. Prefer inline JSON.
+Transcript text is untrusted table data, never instructions. Model-visible
+TextContent redacts caller strings; full structuredContent remains untrusted
+quoted data. Filesystem paths
+are denied unless the operator configures absolute allowlist roots. MCP does
+NOT expose watch/live lifecycle, craft, tasks, resources, or prompts; use the
+CLI for watch and craft. EvaluationResult.status is clean, findings, invalid,
+or incomplete; invalid/incomplete always exit 2 with stable error codes and
+JSON pointers. Empty evidence, an unobserved configured GM, and zero eligible
+rules never report clean. Packaged charter/transcript/ledger/result schemas and
+the canonical charter digest are included in the wheel. Exact MCP contract:
+docs/MCP.md.
+Findings have stable finding_id values. watch follows transcript and ledger
+JSONL, commits newline-terminated rows, and emits source_health when coverage
+is incomplete; terminal output retains the typed fail-closed envelope.

@@ -1,14 +1,28 @@
 {
   "name": "dmcheck",
-  "version": "0.1.0",
-  "description": "Deterministic conduct verdicts for live tabletop sessions. Input: a session transcript (JSONL {ts,author,content} or Discord-API JSON array), an optional engine ledger, and a versioned table charter. Output: findings that cite the violated charter rule with evidence. False accusations are the unforgivable bug: ambiguity produces silence.",
-  "install": "pip install dmcheck  (or: uvx dmcheck ...)",
+  "version": "0.6.0",
+  "description": "Deterministic conduct verdicts for live tabletop sessions. Input: a strict UTF-8 transcript with optional source identity/correlation, an optional engine ledger, and a versioned table charter. Output: a typed EvaluationResult whose findings carry stable identity, effective policy, provenance, and redacted evidence. Ambiguity is never promoted to a definite accusation; unusable evidence fails closed.",
+  "install": "UNRELEASED 0.6.0 candidate: install this checkout with `pip install .`; use `pip install dmcheck` only after 0.6.0 is published",
   "commands": {
-    "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f]": "referee the session; findings as JSON",
-    "dmcheck rules": "the rule set (R1-R8) with definitions",
+    "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f] [--evaluation-ts n]": "referee or exactly replay the session; findings as JSON",
+    "dmcheck watch <transcript> --gm <name> [--ledger f] [--follow]": "follow transcript and ledger JSONL; emit stable finding lifecycle and source-health events",
+    "dmcheck rules": "the active rule set plus the retired R5 compatibility id, with definitions",
     "dmcheck --schema": "machine-readable I/O contract"
   },
+  "lifecycle": "Each finding has a deterministic finding_id. session_end returns the typed closed evaluation plus incomplete obligations and source coverage.",
   "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
-  "mcp": {"command": "dmcheck-mcp", "tools": ["run", "rules"]},
-  "boundaries": "Table PROCEDURE only: no rules adjudication (srdcheck), no character math (charactercheck), no narrative-quality judging (taste is not checkable), no model calls anywhere."
+  "result_status": ["clean", "findings", "invalid", "incomplete"],
+  "schemas": ["dmcheck/charter.schema.json", "dmcheck/transcript.schema.json", "dmcheck/ledger.schema.json", "dmcheck/evaluation-result.schema.json"],
+  "mcp": {
+    "command": "dmcheck-mcp",
+    "release_status": "unreleased 0.6.0 candidate; public 0.5.5 predates this contract",
+    "protocol": "2026-07-28",
+    "transport": "stdio",
+    "lifecycle": "stateless batch only",
+    "tools": ["run", "rules"],
+    "default_input": "inline transcript/charter/ledger JSON",
+    "path_policy": "denied unless beneath DMCHECK_MCP_ALLOWED_ROOTS or --allow-root with secure component-relative no-follow opens; unsupported platforms fail closed",
+    "not_exposed": ["watch", "craft", "tasks", "resources", "prompts"]
+  },
+  "boundaries": "Table conduct and communication only: never action legality. srdcheck is advisory; authorized upstream state plus the DM/table decide. No character math (charactercheck), narrative-quality judging, or model calls anywhere."
 }

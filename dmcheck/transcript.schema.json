@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/dmcheck/schemas/transcript-1.0.json",
+  "title": "dmcheck transcript",
+  "type": "array",
+  "items": {"$ref": "#/$defs/message"},
+  "$defs": {
+    "timestamp": {
+      "oneOf": [
+        {"type": "number", "minimum": 0},
+        {"type": "string", "format": "date-time"},
+        {"type": "null"}
+      ]
+    },
+    "message": {
+      "type": "object",
+      "required": ["author", "content"],
+      "properties": {
+        "ts": {"$ref": "#/$defs/timestamp"},
+        "timestamp": {"$ref": "#/$defs/timestamp"},
+        "author": {
+          "oneOf": [
+            {"type": "string", "minLength": 1},
+            {
+              "type": "object",
+              "required": ["username"],
+              "properties": {"username": {"type": "string", "minLength": 1}}
+            }
+          ]
+        },
+        "content": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

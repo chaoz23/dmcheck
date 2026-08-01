@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/dmcheck/schemas/evaluation-result-1.0.json",
+  "title": "dmcheck EvaluationResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result_schema_version", "status", "exit_code", "mode", "evaluation_ts", "messages",
+    "findings", "counts", "errors", "eligible_rules", "skipped_rules",
+    "charter"
+  ],
+  "properties": {
+    "result_schema_version": {"const": "1.0"},
+    "status": {"enum": ["clean", "findings", "invalid", "incomplete"]},
+    "exit_code": {"enum": [0, 1, 2]},
+    "mode": {"enum": ["closed", "live", null]},
+    "evaluation_ts": {"type": ["number", "null"], "minimum": 0},
+    "messages": {"type": "integer", "minimum": 0},
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/finding"}
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "R1": {"type": "integer", "minimum": 1},
+        "R2": {"type": "integer", "minimum": 1},
+        "R3": {"type": "integer", "minimum": 1},
+        "R4": {"type": "integer", "minimum": 1},
+        "R5": {"type": "integer", "minimum": 1},
+        "R6": {"type": "integer", "minimum": 1},
+        "R7": {"type": "integer", "minimum": 1},
+        "R8": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "errors": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/problem"}
+    },
+    "eligible_rules": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/rule"}
+    },
+    "skipped_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule", "code", "message"],
+        "properties": {
+          "rule": {"$ref": "#/$defs/rule"},
+          "code": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "charter": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "charter_version", "digest", "digest_scope"],
+          "properties": {
+            "schema_version": {"type": "string", "minLength": 1},
+            "charter_version": {"type": "string", "minLength": 1},
+            "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "digest_scope": {"const": "public-policy; hidden values withheld"}
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "clean"}}},
+      "then": {
+        "properties": {
+          "exit_code": {"const": 0},
+          "findings": {"maxItems": 0},
+          "errors": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "findings"}}},
+      "then": {
+        "properties": {
+          "exit_code": {"const": 1},
+          "findings": {"minItems": 1},
+          "errors": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["invalid", "incomplete"]}}},
+      "then": {
+        "properties": {
+          "exit_code": {"const": 2},
+          "findings": {"maxItems": 0},
+          "errors": {"minItems": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "rule": {"enum": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]},
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "pointer", "message"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "pointer": {"type": "string"},
+        "message": {"type": "string", "minLength": 1}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "ts": {"type": ["number", "null"], "minimum": 0},
+        "author": {"type": "string", "minLength": 1},
+        "content": {"type": "string", "maxLength": 140},
+        "obligation_id": {"type": ["string", "null"]},
+        "audience_evidence": {"enum": ["observed", "inferred"]},
+        "uncorrelated_gm_messages": {"type": "integer", "minimum": 0},
+        "ledger_ts": {"type": ["number", "null"], "minimum": 0},
+        "event_id": {"type": ["string", "null"]},
+        "type": {"enum": ["act", "event"]},
+        "text": {"type": "string", "maxLength": 140},
+        "source_fingerprint": {"type": "string", "minLength": 1},
+        "actor": {"type": "string", "minLength": 1},
+        "secret_ids": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "open": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"enum": ["R1", "R2", "R3"]}
+        },
+        "obligation_ids": {
+          "type": "array",
+          "items": {"type": ["string", "null"]}
+        },
+        "finding_ids": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "string", "pattern": "^r[1-8]-[0-9a-f]{24}$"}
+        }
+      },
+      "minProperties": 1
+    },
+    "effectivePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "answer_within_messages": {"type": "integer", "minimum": 1},
+        "question_requires_gm_address": {"type": "boolean"},
+        "correlation": {"type": "string", "minLength": 1},
+        "quiet_table_required_for_inferred": {"type": "boolean"},
+        "roll_ack_within_messages": {"type": "integer", "minimum": 1},
+        "dice_authors": {"type": "array", "items": {"type": "string"}},
+        "text_only_result": {"type": "string", "minLength": 1},
+        "ledger_types": {"type": "array", "items": {"type": "string"}},
+        "legacy_time_only": {"type": "string", "minLength": 1},
+        "cue_within_gm_messages": {"type": "integer", "minimum": 1},
+        "cue_requires_mention": {"type": "boolean"},
+        "mention_configured": {"type": "boolean"},
+        "aliases": {"type": "array", "items": {"type": "string"}},
+        "hidden_term_ids": {"type": "array", "items": {"type": "string"}},
+        "matching": {"type": "string", "minLength": 1},
+        "raw_evidence": {"type": "string", "minLength": 1},
+        "dead_air_seconds": {"type": "number", "minimum": 0},
+        "dead_air_requires_quiet_table": {"type": "boolean"},
+        "quiet_table_max_messages": {"type": "integer", "minimum": 0},
+        "ooc_markers": {"type": "array", "items": {"type": "string"}},
+        "session_closed": {"type": "boolean"},
+        "open_rule_ids": {"type": "array", "items": {"enum": ["R1", "R2", "R3"]}},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id", "rule", "summary", "charter", "detail", "evidence",
+        "status", "severity", "provenance", "confidence", "effective_policy",
+        "charter_version", "charter_digest", "charter_digest_scope"
+      ],
+      "properties": {
+        "finding_id": {"type": "string", "pattern": "^r[1-8]-[0-9a-f]{24}$"},
+        "rule": {"$ref": "#/$defs/rule"},
+        "summary": {"type": "string", "minLength": 1},
+        "charter": {"type": "string", "minLength": 1},
+        "detail": {"type": "string", "minLength": 1},
+        "evidence": {"$ref": "#/$defs/evidence"},
+        "status": {"enum": ["open", "uncertain"]},
+        "severity": {"enum": ["finding", "advisory"]},
+        "provenance": {"enum": ["observed", "inferred"]},
+        "confidence": {"enum": ["high", "low"]},
+        "effective_policy": {"$ref": "#/$defs/effectivePolicy"},
+        "charter_version": {"type": "string", "minLength": 1},
+        "charter_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "charter_digest_scope": {"const": "public-policy; hidden values withheld"},
+        "redacted": {"type": "boolean"}
+      }
+    }
+  }
+}

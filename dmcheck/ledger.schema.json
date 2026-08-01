@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/dmcheck/schemas/ledger-1.0.json",
+  "title": "dmcheck engine-event ledger",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["type"],
+    "properties": {
+      "ts": {
+        "oneOf": [
+          {"type": "number", "minimum": 0},
+          {"type": "string", "format": "date-time"},
+          {"type": "null"}
+        ]
+      },
+      "type": {"enum": ["turn", "act", "event"]},
+      "actor": {"type": "string", "minLength": 1},
+      "text": {"type": "string"}
+    },
+    "additionalProperties": true
+  }
+}

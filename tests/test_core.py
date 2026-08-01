@@ -35,7 +35,11 @@ class TestMessySession(unittest.TestCase):
         # Mira chats on - nobody was blocked, so the old R1 plant is now
         # correctly a non-violation (naive "?" fired 85x/episode on
         # professional play with 0 valid; D1 chooses silence).
-        self.assertEqual(self.rules, ["R2", "R3", "R4", "R5", "R6", "R7", "R8"])
+        # Legacy text/time-only R2/R3 evidence remains advisory, so R8 does
+        # not promote those untyped inferences into authoritative open state.
+        # R4 requires the full configured number of subsequent GM beats; a
+        # short terminal observation window is incomplete, not an accusation.
+        self.assertEqual(self.rules, ["R2", "R3", "R6", "R7"])
 
     def test_r1_suppressed_when_asker_moves_on(self):
         # v0.4 evidence bars: Bram's question is GM-directed, but he attacks
@@ -43,10 +47,10 @@ class TestMessySession(unittest.TestCase):
         # True R1 fires live in tests/test_evidence_bars.py.
         self.assertEqual([f for f in self.findings if f["rule"] == "R1"], [])
 
-    def test_r5_names_both_parties(self):
-        r5 = [f for f in self.findings if f["rule"] == "R5"][0]
-        self.assertEqual(r5["evidence"]["actor"], "Bram")
-        self.assertEqual(r5["evidence"]["turn_of"], "Mira")
+    def test_legacy_r5_charter_does_not_infer_action_legality(self):
+        # The fixture charter still names R5 on purpose: old charters must not
+        # reactivate the unsafe actor != turn-owner predicate.
+        self.assertEqual([f for f in self.findings if f["rule"] == "R5"], [])
 
     def test_every_finding_cites_charter(self):
         for f in self.findings:
@@ -60,9 +64,12 @@ class TestGuards(unittest.TestCase):
     def test_no_gm_declared_is_unusable(self):
         ch = load_charter(CH)
         ch["gm"] = []
-        findings, code = check(load_transcript(os.path.join(FIX, "clean-session.jsonl")), ch)
-        self.assertEqual(code, 2)
-        self.assertIn("error", findings[0])
+        result = check(load_transcript(os.path.join(FIX, "clean-session.jsonl")), ch)
+        self.assertEqual(result.status, "invalid")
+        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(result.findings, [])
+        self.assertTrue(any(error.code == "charter.gm.empty"
+                            for error in result.errors))
 
 
 if __name__ == "__main__":
@@ -117,12 +124,18 @@ class TestLiveMode(unittest.TestCase):
         finally tells the table."""
         from dmcheck.watch import Watcher
         ch = load_charter(CH)
-        ledger = [{"ts": 1700000200, "type": "event", "text": "guard drops"}]
+        ledger = [{"ts": 1700000200, "type": "event", "id": "evt-guard-drops",
+                   "text": "guard drops"}]
         events = []
         w = Watcher(ch, ledger, emit=events.append)
         w.feed({"ts": 1700000100, "author": "Greta", "content": "The fight rages."})
         w.tick(now=1700000300)
+        self.assertFalse(any(e["event"] == "open" and e["rule"] == "R3"
+                             for e in events))
+        w.feed({"ts": 1700000300, "author": "Greta",
+                "content": "Elsewhere, the fight continues."}, now=1700000301)
         self.assertTrue(any(e["event"] == "open" and e["rule"] == "R3" for e in events))
         w.feed({"ts": 1700000400, "author": "Greta",
-                "content": "The guard drops in a heap!"}, now=1700000401)
+                "content": "The guard drops in a heap!",
+                "correlation_id": "evt-guard-drops"}, now=1700000401)
         self.assertTrue(any(e["event"] == "resolved" and e["rule"] == "R3" for e in events))

@@ -14,7 +14,9 @@ def _rows(rows):
 
 
 CH = {"gm": ["OCE"], "dice_authors": [], "ooc_markers": [], "hidden_terms": [],
-      "thresholds": {}, "rules_enabled": ["R4"],
+      # These tests isolate transport policy, not the threshold window. A
+      # one-beat charter makes an absent cue provable after that one beat.
+      "thresholds": {"cue_within_gm_messages": 1}, "rules_enabled": ["R4"],
       "seats": {"Shalia": {"cue_requires_mention": True, "mention": "<@42>"}}}
 
 
@@ -26,6 +28,7 @@ def test_init_charter_passes_lint(tmp_path, capsys):
     assert main(["lint-charter", str(out)]) == 0
     ch = json.load(open(out))
     assert ch["gm"] == ["OCE"] and ch["rules_enabled"][0] == "R1"
+    assert "R5" not in ch["rules_enabled"]
 
 
 def test_r4_name_in_prose_is_not_a_cue_for_mention_gated_seat():
@@ -56,4 +59,4 @@ def test_r4_unconfigured_seat_falls_back_to_name():
 def test_lint_flags_mention_requirement_without_string(tmp_path):
     bad = dict(CH); bad["seats"] = {"Shalia": {"cue_requires_mention": True}}
     p = tmp_path / "c.json"; p.write_text(json.dumps(bad))
-    assert main(["lint-charter", str(p)]) == 1
+    assert main(["lint-charter", str(p)]) == 2
