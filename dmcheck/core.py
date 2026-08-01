@@ -75,6 +75,7 @@ class EvaluationResult:
     skipped_rules: list = field(default_factory=list)
     eligible_rules: list = field(default_factory=list)
     charter: dict = None
+    evaluation_ts: float = None
 
     @property
     def exit_code(self):
@@ -110,6 +111,7 @@ class EvaluationResult:
             "status": self.status,
             "exit_code": self.exit_code,
             "mode": self.mode,
+            "evaluation_ts": self.evaluation_ts,
             "messages": self.messages,
             "findings": self.findings,
             "counts": counts,
@@ -156,7 +158,10 @@ def _finding_id(rule, evidence):
     # Transcript indices are presentation coordinates and may change when a
     # duplicate delivery is removed. The source timestamp/author/content stay
     # in evidence and form the stable repo-local correlation instead.
-    identity_evidence = {k: v for k, v in evidence.items() if k != "index"}
+    identity_evidence = {
+        k: v for k, v in evidence.items()
+        if k not in {"index", "uncorrelated_gm_messages"}
+    }
     # JSON distinguishes 10 from 10.0 textually even though both denote the
     # same instant. Batch loaders and watch normalize to floats, but callers
     # may invoke check() directly with integer timestamps; identity must not
@@ -291,7 +296,8 @@ def _redact(value, ch):
 def public_charter(ch):
     """Return the effective charter safe for ordinary CLI/MCP/log output."""
     safe = {k: v for k, v in ch.items()
-            if k not in {"hidden_terms", "redaction_key", "secret_key"}}
+            if k not in {"hidden_terms", "charter_digest", "redaction_key",
+                         "secret_key"}}
     safe["hidden_terms"] = [{"id": secret_id, "value": "[REDACTED]"}
                             for secret_id, _ in _hidden_terms(ch)]
     return _redact(safe, ch)
@@ -1019,7 +1025,8 @@ def evaluate(transcript, charter, ledger=None, mode="closed", now=None):
         return EvaluationResult(
             "incomplete", mode, messages=len(normalized_transcript),
             errors=incomplete, skipped_rules=skipped,
-            eligible_rules=eligible, charter=normalized_charter)
+            eligible_rules=eligible, charter=normalized_charter,
+            evaluation_ts=normalized_now)
 
     try:
         effective_charter = dict(normalized_charter)
@@ -1037,7 +1044,7 @@ def evaluate(transcript, charter, ledger=None, mode="closed", now=None):
         "findings" if findings else "clean", mode,
         messages=len(normalized_transcript), findings=findings,
         skipped_rules=skipped, eligible_rules=eligible,
-        charter=normalized_charter)
+        charter=normalized_charter, evaluation_ts=normalized_now)
 
 
 def check(transcript, charter, ledger=None, closed=True, now=None, mode=None):

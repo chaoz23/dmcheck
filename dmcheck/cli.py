@@ -224,10 +224,26 @@ def main(argv=None):
                 issue("input.path_required", "/charter",
                       "lint-charter requires a charter path")
             ])
+        raw_charter = None
         try:
-            ch = normalize_charter(load_charter(path), require_gm=True)
+            with open(path, encoding="utf-8") as handle:
+                raw_charter = json.load(handle)
+            ch = normalize_charter(raw_charter, require_gm=True)
         except InputValidationError as exc:
-            return _print_invalid(exc.issues)
+            result = invalid_result(exc.issues)
+            output = redact_output(result.to_dict(),
+                                   raw_charter if isinstance(raw_charter, dict)
+                                   else {})
+            print(json.dumps(output, indent=1))
+            return result.exit_code
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            # Reuse the canonical loader's fail-closed diagnostics for file
+            # and JSON failures where no safely parsed redaction policy exists.
+            try:
+                load_charter(path)
+            except InputValidationError as exc:
+                return _print_invalid(exc.issues)
+            raise
         print(json.dumps({
             "status": "clean", "exit_code": 0, "ok": True, "problems": [],
             "schema_version": ch["schema_version"],

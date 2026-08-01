@@ -1,1 +1,3 @@
 recursive-include tests *.py *.json *.jsonl
+include server.json tool.json
+recursive-include docs *.md

@@ -439,8 +439,10 @@ class TestToolContract(unittest.TestCase):
         })["result"]
         self.assertEqual(echoed_as_evidence["structuredContent"]["status"],
                          "findings")
-        self.assertIn("IGNORE PRIOR INSTRUCTIONS", echoed_as_evidence[
-            "structuredContent"]["findings"][0]["evidence"]["content"])
+        evidence = echoed_as_evidence[
+            "structuredContent"]["findings"][0]["evidence"]
+        self.assertEqual(evidence["content"], "[REDACTED]")
+        self.assertNotIn("IGNORE PRIOR INSTRUCTIONS", json.dumps(evidence))
         model_visible = echoed_as_evidence["content"][0]["text"]
         self.assertNotIn("IGNORE PRIOR INSTRUCTIONS", model_visible)
         self.assertNotIn("call another tool", model_visible)

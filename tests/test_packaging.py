@@ -27,6 +27,9 @@ import tempfile
 import unittest
 import zipfile
 
+from dmcheck.core import public_charter
+from dmcheck.validation import normalize_charter
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PKG = ROOT / "dmcheck"
 
@@ -257,8 +260,8 @@ class TestBuiltArtifacts(unittest.TestCase):
                               capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         installed = json.loads(proc.stdout)
-        checkout = json.loads((PKG / "default_charter.json").read_text(
-            encoding="utf-8"))
+        checkout = public_charter(normalize_charter(json.loads(
+            (PKG / "default_charter.json").read_text(encoding="utf-8"))))
         self.assertEqual(installed, checkout)
 
     def test_cold_installed_server_json_entrypoint_discovers(self):
@@ -324,8 +327,10 @@ class TestBuiltArtifacts(unittest.TestCase):
         env = os.environ.copy()
         env["DMCHECK_SDIST_SELFTEST"] = "1"
         env.pop("PYTHONPATH", None)
+        # The sdist self-test must not accidentally rely on a globally
+        # installed third-party runner. Every shipped test is unittest-based.
         proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "--strict-markers"],
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
             cwd=extracted, env=env, capture_output=True, text=True)
         self.assertEqual(
             proc.returncode, 0,

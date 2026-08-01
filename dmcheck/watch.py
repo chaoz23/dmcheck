@@ -296,6 +296,15 @@ class Watcher:
     def set_source_coverage(self, source, coverage):
         self.source_coverage[source] = coverage
 
+    def fail(self, problems):
+        if self._fatal is None:
+            self._fatal = invalid_result(
+                problems, mode="live", messages=len(self.messages),
+                charter=self.ch)
+            self.open.clear()
+            self.emit({"event": "evaluation", **self._fatal.to_dict()})
+        return self._fatal
+
     def _evaluate(self, closed=False, now=None):
         if self._fatal is not None:
             return self._fatal
@@ -341,10 +350,13 @@ class Watcher:
         try:
             row = normalize_transcript([message])[0]
         except InputValidationError as exc:
-            self._fatal = invalid_result(exc.issues, mode="live",
-                                         messages=len(self.messages),
-                                         charter=self.ch)
-            self.emit({"event": "evaluation", **self._fatal.to_dict()})
+            index = len(self.messages)
+            rebased = [issue(
+                problem.code,
+                problem.pointer.replace("/transcript/0",
+                                        f"/transcript/{index}", 1),
+                problem.message) for problem in exc.issues]
+            self.fail(rebased)
             return None
         if row.get("author") is None:
             return None
@@ -360,10 +372,7 @@ class Watcher:
         try:
             row = normalize_ledger([event])[0]
         except InputValidationError as exc:
-            self._fatal = invalid_result(exc.issues, mode="live",
-                                         messages=len(self.messages),
-                                         charter=self.ch)
-            self.emit({"event": "evaluation", **self._fatal.to_dict()})
+            self.fail(exc.issues)
             return None
         key = _source_row_key("ledger", row)
         if key in self._ledger_keys:
@@ -384,6 +393,8 @@ class Watcher:
             if row is not None:
                 changed = True
                 new_messages.append(row)
+        if self._fatal is not None:
+            return self._fatal
         if changed or now is not None:
             self._evaluate(closed=False, now=now)
         if not self.paused:
@@ -485,8 +496,26 @@ class Watcher:
         # deterministic order, so this list is byte-for-byte comparable after
         # JSON serialization when both paths use the same evaluation horizon.
         findings = list(self.open.values())
+        terminal = result.to_dict()
+        if result.status == "clean" and incomplete:
+            # A terminal observation gap is not a clean bill of health. Keep
+            # domain-specific detail in ``incomplete`` while preserving the
+            # fail-closed EvaluationResult invariant: no findings, exit 2,
+            # and at least one machine-readable problem.
+            terminal.update({
+                "status": "incomplete",
+                "exit_code": 2,
+                "findings": [],
+                "counts": {},
+                "errors": [{
+                    "code": "evidence.terminal_incomplete",
+                    "pointer": "/incomplete",
+                    "message": "terminal evidence windows or source coverage remain incomplete",
+                }],
+            })
+            findings = []
         summary = {
-            "event": "session_end", **result.to_dict(),
+            "event": "session_end", **terminal,
             "state": "ended",
             "evaluation_ts": terminal_now,
             # `open` remains the legacy rule-name summary.
@@ -499,7 +528,7 @@ class Watcher:
             "coverage": dict(sorted(self.source_coverage.items())),
         }
         self.emit(summary)
-        self._close_code = result.exit_code
+        self._close_code = terminal["exit_code"]
         self._closed = True
         return self._close_code
 
@@ -565,7 +594,16 @@ def watch_main(args):
                 if args.ledger else None)
             if ledger_follower:
                 poll_sources(watcher, ledger_follower=ledger_follower)
-            for line in sys.stdin:
+            stream = getattr(sys.stdin, "buffer", sys.stdin)
+            for line_number, line in enumerate(stream, 1):
+                if isinstance(line, bytes):
+                    try:
+                        line = line.decode("utf-8")
+                    except UnicodeDecodeError:
+                        watcher.fail([issue(
+                            "input.utf8", f"/transcript/line/{line_number}",
+                            "transcript stdin must be valid UTF-8")])
+                        break
                 if line.strip():
                     ledger_rows = (ledger_follower.poll()
                                    if ledger_follower else [])
@@ -588,4 +626,12 @@ def watch_main(args):
                 watcher.feed(message, now=message.get("ts"))
     except (KeyboardInterrupt, EOFError):
         pass
+    except InputValidationError as exc:
+        watcher.fail(exc.issues)
+    except UnicodeError:
+        watcher.fail([issue("input.utf8", "/transcript",
+                            "transcript stdin must be valid UTF-8")])
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        watcher.fail([issue("input.unreadable", "/transcript",
+                            "transcript could not be read: %s" % exc)])
     return watcher.close()

@@ -44,6 +44,16 @@ def rows(*messages):
 
 
 class CorrelationTests(unittest.TestCase):
+    def assert_clean(self, result):
+        self.assertEqual(result.status, "clean")
+        self.assertEqual(result.findings, [])
+        self.assertEqual(result.exit_code, 0)
+
+    def assert_incomplete(self, result):
+        self.assertEqual(result.status, "incomplete")
+        self.assertEqual(result.findings, [])
+        self.assertEqual(result.exit_code, 2)
+
     def test_loader_preserves_source_identity_and_reply_evidence(self):
         payload = [{
             "id": "m-2",
@@ -66,29 +76,31 @@ class CorrelationTests(unittest.TestCase):
     def test_public_or_player_question_is_not_a_gm_obligation(self):
         for audience in ("table", "B", ["GM", "table"]):
             transcript = rows(
+                {"ts": 0, "author": "GM", "content": "Begin."},
                 {"ts": 1, "id": "q-1", "author": "A", "content": "Ready?",
                  "audience": audience},
                 {"ts": 2, "author": "A", "content": "Going once"},
                 {"ts": 3, "author": "A", "content": "Going twice"},
             )
-            findings, code = check(transcript, charter("R1"))
-            self.assertEqual((findings, code), ([], 0), audience)
+            self.assert_clean(check(transcript, charter("R1")))
 
     def test_public_audience_wins_over_conflicting_question_type(self):
         transcript = rows(
+            {"ts": 0, "author": "GM", "content": "Begin."},
             {"ts": 1, "id": "q-public", "author": "A", "content": "Ready?",
              "event_type": "question.to_gm", "audience": "table"},
             {"ts": 2, "author": "A", "content": "waiting"},
             {"ts": 3, "author": "A", "content": "waiting"},
         )
-        self.assertEqual(check(transcript, charter("R1")), ([], 0))
+        self.assert_clean(check(transcript, charter("R1")))
 
-        transcript[0].pop("audience")
-        transcript[0]["event_type"] = "question.public"
-        self.assertEqual(check(transcript, charter("R1")), ([], 0))
+        transcript[1].pop("audience")
+        transcript[1]["event_type"] = "question.public"
+        self.assert_clean(check(transcript, charter("R1")))
 
     def test_unrelated_gm_message_does_not_close_typed_question(self):
         transcript = rows(
+            {"ts": 0, "author": "GM", "content": "Begin."},
             {"ts": 1, "id": "q-1", "author": "A", "content": "What is the DC?",
              "audience": "GM"},
             {"ts": 2, "id": "gm-1", "author": "GM", "content": "The torch gutters."},
@@ -100,17 +112,19 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(r1["evidence"]["obligation_id"], "q-1")
         self.assertEqual(r1["severity"], "finding")
 
-        transcript[1]["correlation_id"] = "q-1"
+        transcript[2]["correlation_id"] = "q-1"
         findings, code = check(transcript, charter("R1"))
         self.assertEqual((findings, code), ([], 0))
 
     def test_concurrent_typed_questions_remain_distinct_obligations(self):
         transcript = rows(
+            {"ts": 0, "author": "GM", "content": "Begin."},
             {"ts": 1, "id": "q-a", "author": "A",
              "content": "Rules clarification", "event_type": "question.to_gm"},
             {"ts": 2, "id": "q-b", "author": "B",
              "content": "World clarification", "event_type": "question.to_gm"},
             {"ts": 3, "author": "C", "content": "I hold my action."},
+            {"ts": 4, "author": "C", "content": "I still hold."},
         )
         findings, code = check(transcript, charter("R1"))
         self.assertEqual(code, 1)
@@ -128,7 +142,7 @@ class CorrelationTests(unittest.TestCase):
             {"ts": 4, "author": "GM", "content": "It is 15.",
              "correlation_id": "q-late"},
         )
-        self.assertEqual(check(transcript, charter("R1", "R8")), ([], 0))
+        self.assert_clean(check(transcript, charter("R1", "R8")))
 
     def test_correlated_status_is_not_a_question_answer(self):
         transcript = rows(
@@ -147,17 +161,18 @@ class CorrelationTests(unittest.TestCase):
             {"ts": 2, "author": "GM", "content": "The torch gutters."},
             {"ts": 3, "author": "A", "content": "Still waiting."},
         )
-        self.assertEqual(check(transcript, charter("R1")), ([], 0))
+        self.assert_clean(check(transcript, charter("R1")))
 
     def test_bot_status_damage_and_roll_request_are_not_results(self):
         for content in ("DiceBot online and ready", "Error: permission denied",
                         "14 damage", "Roll 1d20 please"):
             transcript = rows(
+                {"ts": 0, "author": "GM", "content": "Begin."},
                 {"ts": 1, "author": "DiceBot", "content": content},
                 {"ts": 2, "author": "A", "content": "..."},
                 {"ts": 3, "author": "A", "content": "..."},
             )
-            self.assertEqual(check(transcript, charter("R2")), ([], 0), content)
+            self.assert_clean(check(transcript, charter("R2")))
 
     def test_typed_bot_status_and_request_cannot_masquerade_as_results(self):
         cases = (
@@ -167,17 +182,20 @@ class CorrelationTests(unittest.TestCase):
         )
         for event_type, content in cases:
             transcript = rows(
+                {"ts": 0, "author": "GM", "content": "Begin."},
                 {"ts": 1, "author": "DiceBot", "content": content,
                  "event_type": event_type, "roll_id": "roll-status"},
             )
-            self.assertEqual(check(transcript, charter("R2")), ([], 0),
-                             event_type)
+            self.assert_clean(check(transcript, charter("R2")))
 
     def test_typed_result_is_not_rejected_by_unrelated_word_left(self):
         transcript = rows(
+            {"ts": 0, "author": "GM", "content": "Begin."},
             {"ts": 1, "author": "DiceBot",
-             "content": "A rolls 1d20 = 19; the target has 2 HP left",
-             "event_type": "roll.result", "roll_id": "roll-real"},
+            "content": "A rolls 1d20 = 19; the target has 2 HP left",
+            "event_type": "roll.result", "roll_id": "roll-real"},
+            {"ts": 2, "author": "A", "content": "waiting"},
+            {"ts": 3, "author": "A", "content": "still waiting"},
         )
         findings, code = check(transcript, charter("R2"))
         self.assertEqual(code, 1)
@@ -188,7 +206,7 @@ class CorrelationTests(unittest.TestCase):
             {"ts": 1, "author": "GM", "content": "I roll 1d20 = 19",
              "event_type": "roll.result", "roll_id": "gm-roll"},
         )
-        self.assertEqual(check(transcript, charter("R2", "R8")), ([], 0))
+        self.assert_incomplete(check(transcript, charter("R2", "R8")))
 
     def test_unrelated_gm_message_does_not_close_typed_roll(self):
         transcript = rows(
@@ -201,7 +219,7 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(findings[0]["evidence"]["obligation_id"], "roll-7")
 
         transcript[1]["roll_id"] = "roll-7"
-        self.assertEqual(check(transcript, charter("R2")), ([], 0))
+        self.assert_clean(check(transcript, charter("R2")))
 
     def test_late_correlated_narration_resolves_overdue_roll(self):
         transcript = rows(
@@ -212,7 +230,7 @@ class CorrelationTests(unittest.TestCase):
             {"ts": 4, "author": "GM", "content": "That hits.",
              "roll_id": "roll-late"},
         )
-        self.assertEqual(check(transcript, charter("R2", "R8")), ([], 0))
+        self.assert_clean(check(transcript, charter("R2", "R8")))
 
     def test_correlated_status_or_request_is_not_roll_narration(self):
         for event_type in ("bot.status", "bot.error", "roll.request"):
@@ -229,10 +247,11 @@ class CorrelationTests(unittest.TestCase):
 
     def test_mislabeled_bot_error_is_not_a_roll_result(self):
         transcript = rows(
+            {"ts": 0, "author": "GM", "content": "Begin."},
             {"ts": 1, "author": "DiceBot", "content": "Error: try again",
              "event_type": "roll.result", "roll_id": "roll-bad"},
         )
-        self.assertEqual(check(transcript, charter("R2")), ([], 0))
+        self.assert_clean(check(transcript, charter("R2")))
 
     def test_engine_event_requires_matching_narration_reference(self):
         ledger = [{"ts": 2, "type": "event", "id": "evt-1", "text": "door opens"}]
@@ -245,7 +264,7 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(findings[0]["evidence"]["event_id"], "evt-1")
 
         transcript[1]["correlation_id"] = "evt-1"
-        self.assertEqual(check(transcript, charter("R3"), ledger), ([], 0))
+        self.assert_clean(check(transcript, charter("R3"), ledger))
 
     def test_correlated_status_is_not_engine_event_narration(self):
         ledger = [{"ts": 2, "type": "event", "id": "evt-1",
@@ -260,6 +279,7 @@ class CorrelationTests(unittest.TestCase):
 
     def test_r8_uses_current_open_state_not_transcript_quartile(self):
         transcript = rows(
+            {"ts": 0, "author": "GM", "content": "Begin."},
             {"ts": 1, "id": "q-old", "author": "A", "content": "What is the DC?",
              "audience": "GM"},
             *({"ts": i, "author": "A", "content": "waiting"} for i in range(2, 11)),
@@ -270,14 +290,9 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(r8["evidence"]["open"], ["R1"])
         self.assertEqual(r8["evidence"]["obligation_ids"], ["q-old"])
 
-    def test_ledger_only_and_missing_timestamp_event_is_open_and_promoted(self):
+    def test_ledger_only_and_missing_timestamp_event_is_incomplete(self):
         ledger = [{"type": "event", "id": "evt-no-ts", "text": "door opens"}]
-        findings, code = check([], charter("R3", "R8"), ledger)
-        self.assertEqual(code, 1)
-        self.assertEqual([f["rule"] for f in findings], ["R3", "R8"])
-        self.assertEqual(findings[0]["evidence"]["event_id"], "evt-no-ts")
-        self.assertEqual(findings[1]["evidence"]["obligation_ids"],
-                         ["evt-no-ts"])
+        self.assert_incomplete(check([], charter("R3", "R8"), ledger))
 
     def test_watcher_uses_source_ids_and_normalizes_raw_discord_rows(self):
         ledger = [
@@ -286,6 +301,7 @@ class CorrelationTests(unittest.TestCase):
         ]
         events = []
         watcher = Watcher(charter("R3"), ledger, emit=events.append)
+        watcher.feed({"ts": 1, "author": "GM", "content": "Begin."}, now=1)
         watcher.tick(now=3)
         opened = [e for e in events
                   if e["event"] == "open" and e["rule"] == "R3"]
@@ -312,6 +328,7 @@ class CorrelationTests(unittest.TestCase):
         with patch("dmcheck.watch.subprocess.run") as notify:
             watcher = Watcher(charter("R2", "R8"), emit=events.append,
                               notify_cmd="local-notifier")
+            watcher.feed({"ts": 0, "author": "GM", "content": "Begin."}, now=0)
             watcher.feed({"ts": 1, "author": "DiceBot",
                           "content": "A rolls 1d20 = 19"}, now=1)
             watcher.feed({"ts": 2, "author": "A", "content": "waiting"}, now=2)
@@ -325,8 +342,8 @@ class CorrelationTests(unittest.TestCase):
         self.assertEqual(advisory["confidence"], "low")
         self.assertFalse(any(e.get("rule") == "R8" for e in events))
         session_end = next(e for e in events if e["event"] == "session_end")
-        self.assertEqual(session_end["open_count"], 0)
-        self.assertEqual(code, 0)
+        self.assertEqual(session_end["open_count"], 1)
+        self.assertEqual(code, 1)
         notify.assert_not_called()
 
 
@@ -391,6 +408,7 @@ class RedactionTests(unittest.TestCase):
 
     def test_secret_is_scrubbed_from_other_rule_evidence(self):
         transcript = rows(
+            {"ts": 0, "author": "GM", "content": "Begin."},
             {"ts": 1, "id": "q-1", "author": "A",
              "content": f"GM, is the {self.SECRET} here?", "audience": "GM"},
             {"ts": 2, "author": "A", "content": "waiting"},
@@ -436,7 +454,7 @@ class RedactionTests(unittest.TestCase):
             stream = io.StringIO()
             with redirect_stdout(stream):
                 code = cli_main(["lint-charter", charter_path])
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 2)
         self.assertNotIn("strasse", stream.getvalue().casefold())
 
     def test_cli_run_redacts_top_level_charter_version(self):

@@ -88,7 +88,7 @@ class TestR4Lifecycle(TestCase):
         watcher.feed(
             {"ts": 102, "author": "GM", "content": "Rain falls."}, now=102)
 
-        self.assertEqual(watcher.close(now=102), 0)
+        self.assertEqual(watcher.close(now=102), 2)
         terminal = events[-1]
         self.assertEqual(terminal["event"], "session_end")
         self.assertEqual(terminal["findings"], [])
@@ -160,7 +160,7 @@ class TestR7Lifecycle(TestCase):
         insufficient = Watcher(ch, emit=insufficient_events.append)
         insufficient.feed(
             {"ts": 100, "author": "Ash", "content": "I open it."}, now=100)
-        self.assertEqual(insufficient.close(now=200), 0)
+        self.assertEqual(insufficient.close(now=200), 2)
         insufficient_end = insufficient_events[-1]
         self.assertEqual(insufficient_end["findings"], [])
         self.assertEqual(insufficient_end["status"], "incomplete")
@@ -174,7 +174,7 @@ class TestR7Lifecycle(TestCase):
         ), now=100)
         self.assertEqual(resolved.close(now=100), 0)
         resolved_end = resolved_events[-1]
-        self.assertEqual(resolved_end["status"], "complete")
+        self.assertEqual(resolved_end["status"], "clean")
         self.assertEqual(resolved_end["findings"], [])
         self.assertEqual(resolved_end["incomplete"], [])
 
@@ -316,7 +316,10 @@ class TestTerminalInvariant(TestCase):
             terminal = events[-1]
 
             with self.subTest(case=case):
-                self.assertEqual(actual_code, expected_code)
+                terminal_expected_code = (
+                    2 if expected_code == 0 and terminal["incomplete"]
+                    else expected_code)
+                self.assertEqual(actual_code, terminal_expected_code)
                 self.assertEqual(terminal["findings"], expected)
                 self.assertEqual(terminal["open_count"], len(expected))
                 opens = [event["finding_id"] for event in events
@@ -493,7 +496,7 @@ class TestJsonlFollower(TestCase):
             follower = JsonlFollower(
                 str(path), "transcript", emit=watcher.record_health)
             poll_sources(watcher, transcript_follower=follower)
-            self.assertEqual(watcher.close(), 0)
+            self.assertEqual(watcher.close(), 2)
             terminal = events[-1]
             self.assertEqual(terminal["findings"], [])
             self.assertEqual(terminal["coverage"]["transcript"], "pending")
@@ -523,12 +526,13 @@ class TestFollowEndToEnd(TestCase):
                 if calls["count"] == 1:
                     with ledger_path.open("a", encoding="utf-8") as handle:
                         handle.write(jsonl(
-                            {"ts": 200, "type": "event",
+                            {"ts": 200, "type": "event", "id": "ward-1",
                              "text": "the ward breaks"}))
                 elif calls["count"] == 2:
                     with transcript_path.open("a", encoding="utf-8") as handle:
                         handle.write(jsonl(
                             {"ts": 300, "author": "GM",
+                             "correlation_id": "ward-1",
                              "content": "The ward breaks."}))
                 else:
                     raise KeyboardInterrupt
@@ -560,4 +564,4 @@ class TestFollowEndToEnd(TestCase):
             self.assertEqual(terminal["evaluation_ts"], 400)
             self.assertEqual(terminal["coverage"],
                              {"ledger": "complete", "transcript": "complete"})
-            self.assertEqual(terminal["status"], "complete")
+            self.assertEqual(terminal["status"], "clean")

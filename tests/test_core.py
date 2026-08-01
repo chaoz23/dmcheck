@@ -37,7 +37,9 @@ class TestMessySession(unittest.TestCase):
         # professional play with 0 valid; D1 chooses silence).
         # Legacy text/time-only R2/R3 evidence remains advisory, so R8 does
         # not promote those untyped inferences into authoritative open state.
-        self.assertEqual(self.rules, ["R2", "R3", "R4", "R6", "R7"])
+        # R4 requires the full configured number of subsequent GM beats; a
+        # short terminal observation window is incomplete, not an accusation.
+        self.assertEqual(self.rules, ["R2", "R3", "R6", "R7"])
 
     def test_r1_suppressed_when_asker_moves_on(self):
         # v0.4 evidence bars: Bram's question is GM-directed, but he attacks

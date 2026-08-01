@@ -5,7 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "result_schema_version", "status", "exit_code", "mode", "messages",
+    "result_schema_version", "status", "exit_code", "mode", "evaluation_ts", "messages",
     "findings", "counts", "errors", "eligible_rules", "skipped_rules",
     "charter"
   ],
@@ -14,6 +14,7 @@
     "status": {"enum": ["clean", "findings", "invalid", "incomplete"]},
     "exit_code": {"enum": [0, 1, 2]},
     "mode": {"enum": ["closed", "live", null]},
+    "evaluation_ts": {"type": ["number", "null"], "minimum": 0},
     "messages": {"type": "integer", "minimum": 0},
     "findings": {
       "type": "array",
