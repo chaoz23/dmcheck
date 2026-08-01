@@ -1,5 +1,12 @@
 """dmcheck — deterministic conduct verdicts for live tabletop sessions."""
-from .core import RULES, check, load_charter, load_ledger, load_transcript
+from .core import (EvaluationResult, RULES, check, evaluate, evaluate_paths,
+                   load_charter, load_ledger, load_transcript)
+from .validation import (InputValidationError, ValidationIssue,
+                         apply_charter_overrides)
 
 __version__ = "0.1.0"
-__all__ = ["check", "load_transcript", "load_ledger", "load_charter", "RULES"]
+__all__ = [
+    "EvaluationResult", "InputValidationError", "ValidationIssue", "RULES",
+    "apply_charter_overrides", "check", "evaluate", "evaluate_paths",
+    "load_transcript", "load_ledger", "load_charter",
+]

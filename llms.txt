@@ -8,4 +8,8 @@ session-zero + the nine measured defaults). craft = advisory attention lane:
 rates vs the professional envelope, one signal at a time, categorical defect
 checks, no score ever. MCP server: io.github.chaoz23/dmcheck. Ask it: "did
 the GM leave questions hanging", "watch this session live", "is my line
-length in the professional band".
+length in the professional band". EvaluationResult.status is clean, findings,
+invalid, or incomplete; invalid/incomplete always exit 2 with stable error
+codes and JSON pointers. Empty evidence, an unobserved configured GM, and zero
+eligible rules never report clean. Packaged charter/transcript/ledger/result
+schemas and the canonical charter digest are included in the wheel.

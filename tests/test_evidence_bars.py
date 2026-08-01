@@ -18,7 +18,8 @@ def CH(**kw):
 
 
 def test_r1_banter_question_never_fires():
-    T = _rows([{"ts": 1, "author": "A", "content": "It's a real poster?"},
+    T = _rows([{"ts": 0, "author": "GM", "content": "The scene opens."},
+               {"ts": 1, "author": "A", "content": "It's a real poster?"},
                {"ts": 2, "author": "B", "content": "ha"},
                {"ts": 3, "author": "A", "content": "wild"},
                {"ts": 4, "author": "B", "content": "yeah"},
@@ -30,17 +31,20 @@ def test_r1_banter_question_never_fires():
 
 
 def test_r1_directed_question_with_waiting_table_fires():
-    T = _rows([{"ts": 1, "author": "A", "content": "GM, what DC do I need?"}])
+    T = _rows([{"ts": 0, "author": "GM", "content": "The scene opens."},
+               {"ts": 1, "author": "A", "content": "GM, what DC do I need?"}])
     f, code = check(T, CH(rules_enabled=["R1"]), closed=True)
     assert code == 0 or f == []  # empty window -> no accusation
-    T2 = _rows([{"ts": 1, "author": "A", "content": "GM, what DC do I need?"},
+    T2 = _rows([{"ts": 0, "author": "GM", "content": "The scene opens."},
+                {"ts": 1, "author": "A", "content": "GM, what DC do I need?"},
                 {"ts": 200, "author": "A", "content": "...anyone?"}])
     f2, c2 = check(T2, CH(rules_enabled=["R1"]))
     assert c2 == 1 and f2[0]["rule"] == "R1"
 
 
 def test_r1_busy_table_suppresses():
-    T = _rows([{"ts": 1, "author": "A", "content": "GM, what DC do I need?"},
+    T = _rows([{"ts": 0, "author": "GM", "content": "The scene opens."},
+               {"ts": 1, "author": "A", "content": "GM, what DC do I need?"},
                {"ts": 2, "author": "B", "content": "while he checks - I loot"},
                {"ts": 3, "author": "B", "content": "and I count the arrows"}])
     f, code = check(T, CH(rules_enabled=["R1"]))

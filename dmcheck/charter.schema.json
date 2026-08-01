@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/dmcheck/schemas/charter-1.0.json",
+  "title": "dmcheck effective charter",
+  "type": "object",
+  "required": [
+    "$schema", "schema_version", "charter_version", "charter_digest",
+    "description", "gm", "players", "dice_authors", "ooc_markers",
+    "hidden_terms", "thresholds", "rules_enabled", "seats",
+    "question_requires_gm_address", "dead_air_requires_quiet_table",
+    "seat_quiet_gm_beats"
+  ],
+  "properties": {
+    "$schema": {"const": "https://github.com/chaoz23/dmcheck/schemas/charter-1.0.json"},
+    "schema_version": {"const": "1.0"},
+    "charter_version": {"type": "string", "minLength": 1},
+    "charter_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "effective_date": {"type": "string", "format": "date"},
+    "description": {"type": "string", "minLength": 1},
+    "gm": {"$ref": "#/$defs/nonemptyStrings"},
+    "players": {"$ref": "#/$defs/nonemptyStrings"},
+    "dice_authors": {"$ref": "#/$defs/nonemptyStrings"},
+    "ooc_markers": {"$ref": "#/$defs/nonemptyStrings"},
+    "hidden_terms": {"$ref": "#/$defs/nonemptyStrings"},
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "answer_within_messages", "roll_ack_within_messages",
+        "dead_air_seconds", "cue_within_gm_messages",
+        "quiet_table_max_messages"
+      ],
+      "properties": {
+        "answer_within_messages": {"type": "integer", "minimum": 1},
+        "roll_ack_within_messages": {"type": "integer", "minimum": 1},
+        "cue_within_gm_messages": {"type": "integer", "minimum": 1},
+        "quiet_table_max_messages": {"type": "integer", "minimum": 1},
+        "dead_air_seconds": {"type": "number", "minimum": 0}
+      }
+    },
+    "rules_enabled": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]}
+    },
+    "seats": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cue_requires_mention": {"type": "boolean"},
+          "mention": {"type": "string", "minLength": 1},
+          "aliases": {"$ref": "#/$defs/nonemptyStrings"}
+        }
+      }
+    },
+    "question_requires_gm_address": {"type": "boolean"},
+    "dead_air_requires_quiet_table": {"type": "boolean"},
+    "seat_quiet_gm_beats": {"type": "integer", "minimum": 1}
+  },
+  "patternProperties": {"^_": {}},
+  "additionalProperties": false,
+  "$defs": {
+    "nonemptyStrings": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

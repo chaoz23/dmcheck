@@ -33,4 +33,11 @@ packages = ["dmcheck"]
 # omitted in 0.5.1-0.5.4, so `dmcheck init --dm` raised FileNotFoundError for
 # every installed user while working fine in a checkout.
 # Asserted by tests/test_packaging.py.
-dmcheck = ["default_charter.json", "dm_core.md"]
+dmcheck = [
+    "default_charter.json",
+    "charter.schema.json",
+    "transcript.schema.json",
+    "ledger.schema.json",
+    "evaluation-result.schema.json",
+    "dm_core.md",
+]

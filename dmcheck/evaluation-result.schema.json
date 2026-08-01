@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaoz23/dmcheck/schemas/evaluation-result-1.0.json",
+  "title": "dmcheck EvaluationResult",
+  "type": "object",
+  "required": [
+    "result_schema_version", "status", "exit_code", "mode", "messages",
+    "findings", "counts", "errors", "eligible_rules", "skipped_rules",
+    "charter"
+  ],
+  "properties": {
+    "result_schema_version": {"const": "1.0"},
+    "status": {"enum": ["clean", "findings", "invalid", "incomplete"]},
+    "exit_code": {"enum": [0, 1, 2]},
+    "mode": {"enum": ["closed", "live", null]},
+    "messages": {"type": "integer", "minimum": 0},
+    "findings": {"type": "array", "items": {"type": "object"}},
+    "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "pointer", "message"],
+        "properties": {
+          "code": {"type": "string"},
+          "pointer": {"type": "string"},
+          "message": {"type": "string"}
+        }
+      }
+    },
+    "eligible_rules": {"type": "array", "items": {"type": "string"}},
+    "skipped_rules": {"type": "array", "items": {"type": "object"}},
+    "charter": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["schema_version", "charter_version", "digest"]
+        }
+      ]
+    }
+  }
+}

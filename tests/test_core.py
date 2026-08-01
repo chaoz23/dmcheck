@@ -60,9 +60,12 @@ class TestGuards(unittest.TestCase):
     def test_no_gm_declared_is_unusable(self):
         ch = load_charter(CH)
         ch["gm"] = []
-        findings, code = check(load_transcript(os.path.join(FIX, "clean-session.jsonl")), ch)
-        self.assertEqual(code, 2)
-        self.assertIn("error", findings[0])
+        result = check(load_transcript(os.path.join(FIX, "clean-session.jsonl")), ch)
+        self.assertEqual(result.status, "invalid")
+        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(result.findings, [])
+        self.assertTrue(any(error.code == "charter.gm.empty"
+                            for error in result.errors))
 
 
 if __name__ == "__main__":

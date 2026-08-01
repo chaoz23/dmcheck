@@ -13,9 +13,13 @@ ORIGINS = {
 import argparse
 import os
 import json
+import math
 import sys
 
-from . import RULES, check, load_charter, load_ledger, load_transcript
+from . import RULES, evaluate_paths, load_charter
+from .core import invalid_result
+from .validation import (InputValidationError, issue, load_craft_input,
+                         normalize_charter)
 
 SCHEMA = {
     "name": "dmcheck",
@@ -31,9 +35,21 @@ SCHEMA = {
     },
     "transcript": "JSONL of {ts, author, content} OR a JSON array of Discord-API-shaped messages",
     "ledger": "optional JSONL of {ts, type: turn|act|event, actor?, text?}",
-    "charter": "versioned JSON config (see charters/default.json); charter.gm is REQUIRED",
+    "charter": "schema-versioned JSON config; canonical packaged default is dmcheck/default_charter.json; charter.gm is REQUIRED",
     "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
+    "result": {"schema_version": "1.0",
+               "evaluation_commands": ["run", "watch", "mcp.run", "direct.evaluate"],
+               "status": ["clean", "findings", "invalid", "incomplete"],
+               "craft_status": ["advisory", "invalid", "incomplete"],
+               "schemas": ["charter.schema.json", "transcript.schema.json",
+                           "ledger.schema.json", "evaluation-result.schema.json"]},
 }
+
+
+def _print_invalid(problems, mode="closed"):
+    result = invalid_result(problems, mode=mode)
+    print(json.dumps(result.to_dict(), indent=1))
+    return result.exit_code
 
 
 def main(argv=None):
@@ -62,55 +78,62 @@ def main(argv=None):
         print(json.dumps(RULES, indent=1))
         return 0
     if a.command == "charter":
-        print(json.dumps(load_charter(a.charter), indent=1))
+        try:
+            charter = load_charter(a.charter, gm=a.gm,
+                                   dice_authors=a.dice_bot)
+        except InputValidationError as exc:
+            return _print_invalid(exc.issues)
+        print(json.dumps(charter, indent=1))
         return 0
     if a.command == "craft":
-        from .craft import report
+        from .craft import evaluate as evaluate_craft, failure as craft_failure
         if not a.transcript:
-            ap.error("craft requires a beats file (JSON list of DM beat strings) or transcript JSONL")
+            result = craft_failure([
+                issue("input.path_required", "/craft",
+                      "craft requires a beats or transcript path")
+            ])
+            print(json.dumps(result, indent=1))
+            return result["exit_code"]
         try:
-            raw = open(a.transcript).read().strip()
-            if raw.startswith("["):
-                beats = json.loads(raw)
-                if beats and isinstance(beats[0], dict):
-                    gm = (a.gm or ["GM"])[0]
-                    beats = [m.get("content", "") for m in beats if m.get("author") == gm]
-            else:
-                gm = (a.gm or ["GM"])[0]
-                beats = [json.loads(l).get("content", "") for l in raw.splitlines()
-                         if l.strip() and json.loads(l).get("author") == gm]
-        except (OSError, ValueError, json.JSONDecodeError) as e:
-            print(json.dumps({"error": str(e)}), file=sys.stderr)
-            return 2
-        print(json.dumps(report(beats, a.scene, tuple(a.pc or [])), indent=1))
-        return 0
+            charter = load_charter(a.charter, gm=a.gm)
+            gm_authors = charter.get("gm") or ["GM"]
+            raw = load_craft_input(a.transcript)
+        except InputValidationError as exc:
+            result = craft_failure(exc.issues)
+            print(json.dumps(result, indent=1))
+            return result["exit_code"]
+        result = evaluate_craft(raw, a.scene, tuple(a.pc or []), gm_authors)
+        print(json.dumps(result, indent=1))
+        return result["exit_code"]
     if a.command == "init":
         from datetime import date
         out = a.transcript or "charter.json"
-        charter = {
-            "charter_version": "1.0",
-            "effective_date": date.today().isoformat(),
-            "description": "Table charter — adopted at session zero; edit and bump charter_version on change.",
-            "gm": a.gm or ["YOUR-GM-AUTHOR-NAME"],
-            "players": [],
-            "dice_authors": a.dice_bot or ["Dice Maiden"],
-            "ooc_markers": ["[OOC]", "(("],
-            "hidden_terms": [],
-            "thresholds": {"answer_within_messages": 6, "roll_ack_within_messages": 4,
-                           "dead_air_seconds": 300, "cue_within_gm_messages": 3},
-            "rules_enabled": sorted(RULES),
-            "seats": {},
-            "question_requires_gm_address": True,
-            "dead_air_requires_quiet_table": True,
-            "_notes": {
-                "gm": "author name(s) as they appear in the transcript — REQUIRED",
-                "seats": "per-seat delivery policy incl. aliases (in-fiction cues are by CHARACTER name ~10:1 at pro tables): {\"Ash\": {\"aliases\": [\"Shalia\"], ...}}; also: {name: {cue_requires_mention: true, mention: '<@id>'}} for agent seats behind mention-gated transports",
-                "hidden_terms": "module spoiler names — R6 fires if they leak into GM messages",
-                "thresholds": "R1/R2/R7/R4 knobs; every finding cites the value it judged against",
-            },
-        }
-        with open(out, "w") as f:
-            json.dump(charter, f, indent=1)
+        try:
+            charter = load_charter()
+            charter.pop("charter_digest", None)
+            charter.update({
+                "effective_date": date.today().isoformat(),
+                "description": "Table charter — adopted at session zero; edit and bump charter_version on change.",
+                "gm": a.gm or ["YOUR-GM-AUTHOR-NAME"],
+                "dice_authors": a.dice_bot or charter["dice_authors"],
+                "_notes": {
+                    "gm": "author name(s) as they appear in the transcript — REQUIRED",
+                    "seats": "per-seat delivery policy incl. aliases (in-fiction cues are by CHARACTER name ~10:1 at pro tables): {\"Ash\": {\"aliases\": [\"Shalia\"], ...}}; also: {name: {cue_requires_mention: true, mention: '<@id>'}} for agent seats behind mention-gated transports",
+                    "hidden_terms": "module spoiler names — R6 fires if they leak into GM messages",
+                    "thresholds": "R1/R2/R7/R4 knobs; every finding cites the value it judged against",
+                },
+            })
+            charter = normalize_charter(charter, require_gm=True)
+            with open(out, "w", encoding="utf-8") as handle:
+                json.dump(charter, handle, indent=1, ensure_ascii=False)
+                handle.write("\n")
+        except InputValidationError as exc:
+            return _print_invalid(exc.issues)
+        except (OSError, UnicodeError) as exc:
+            return _print_invalid([
+                issue("input.unwritable", "/charter",
+                      "charter could not be written: %s" % exc)
+            ])
         if a.dm:
             core = os.path.join(os.path.dirname(__file__), "dm_core.md")
             if not os.path.exists(core):
@@ -125,8 +148,16 @@ def main(argv=None):
                     "charter_written": out,
                 }, indent=1))
                 return 2
-            with open("DM-CORE.md", "w") as f:
-                f.write(open(core).read())
+            try:
+                with open(core, encoding="utf-8") as source:
+                    core_text = source.read()
+                with open("DM-CORE.md", "w", encoding="utf-8") as target:
+                    target.write(core_text)
+            except (OSError, UnicodeError) as exc:
+                return _print_invalid([
+                    issue("input.unwritable", "/dm_core",
+                          "DM-CORE.md could not be written: %s" % exc)
+                ])
         print(json.dumps({
             "charter_written": out,
             "edit_first": ["gm (author names)", "players", "hidden_terms",
@@ -151,73 +182,59 @@ def main(argv=None):
     if a.command == "explain":
         rid = (a.transcript or "").upper()
         if rid not in RULES:
-            print(json.dumps({"error": f"unknown rule {rid!r}; try R1..R8"}), file=sys.stderr)
-            return 2
-        ch = load_charter(a.charter)
+            return _print_invalid([
+                issue("charter.unknown_rule", "/rule",
+                      f"unknown rule {rid!r}; try R1..R8")
+            ])
+        try:
+            ch = load_charter(a.charter)
+        except InputValidationError as exc:
+            return _print_invalid(exc.issues)
         print(json.dumps({"rule": rid, "definition": RULES[rid],
                           "charter_knobs": ch.get("thresholds", {}),
                           "origin": ORIGINS.get(rid, "")}, indent=1))
         return 0
     if a.command == "lint-charter":
+        path = a.transcript or a.charter
+        if not path:
+            return _print_invalid([
+                issue("input.path_required", "/charter",
+                      "lint-charter requires a charter path")
+            ])
         try:
-            ch = json.load(open(a.transcript or a.charter))
-        except (OSError, json.JSONDecodeError) as e:
-            print(json.dumps({"error": str(e)}), file=sys.stderr)
-            return 2
-        KNOWN = {"charter_version", "effective_date", "description", "gm", "players",
-                 "dice_authors", "ooc_markers", "hidden_terms", "thresholds",
-                 "rules_enabled", "seats", "question_requires_gm_address",
-                 "dead_air_requires_quiet_table"}
-        KNOWN_TH = {"answer_within_messages", "roll_ack_within_messages",
-                    "dead_air_seconds", "cue_within_gm_messages",
-                    "quiet_table_max_messages"}
-        problems = [f"unknown key '{k}'" for k in ch
-                    if k not in KNOWN and not k.startswith("_")]
-        problems += [f"unknown threshold '{k}'" for k in ch.get("thresholds", {})
-                     if k not in KNOWN_TH]
-        problems += [f"threshold '{k}' must be a positive number"
-                     for k, v in ch.get("thresholds", {}).items()
-                     if not isinstance(v, (int, float)) or v <= 0]
-        for name, sc in (ch.get("seats") or {}).items():
-            if not isinstance(sc, dict):
-                problems.append(f"seat '{name}' must be an object")
-                continue
-            problems += [f"seat '{name}': unknown key '{k}'"
-                         for k in set(sc) - {"cue_requires_mention", "mention",
-                                             "aliases"}]
-            if sc.get("cue_requires_mention") and not sc.get("mention"):
-                problems.append(f"seat '{name}': cue_requires_mention without a "
-                                f"mention string — unverifiable; R4 falls back to name matching")
-        if not ch.get("gm"):
-            problems.append("charter.gm is empty — dmcheck cannot referee without it")
-        print(json.dumps({"problems": problems, "ok": not problems}, indent=1))
-        return 1 if problems else 0
+            ch = normalize_charter(load_charter(path), require_gm=True)
+        except InputValidationError as exc:
+            return _print_invalid(exc.issues)
+        print(json.dumps({
+            "status": "clean", "exit_code": 0, "ok": True, "problems": [],
+            "schema_version": ch["schema_version"],
+            "charter_version": ch["charter_version"],
+            "charter_digest": ch["charter_digest"],
+        }, indent=1))
+        return 0
     if a.command == "watch":
         from .watch import watch_main
         if not a.transcript:
-            ap.error("watch requires a transcript file or '-' for stdin")
+            return _print_invalid([
+                issue("input.path_required", "/transcript",
+                      "watch requires a transcript path or '-' for stdin")
+            ], mode="live")
+        if not math.isfinite(a.interval) or a.interval <= 0:
+            return _print_invalid([
+                issue("watch.interval", "/interval",
+                      "watch interval must be finite and greater than zero")
+            ], mode="live")
         return watch_main(a)
     if not a.transcript:
-        ap.error("a transcript file is required")
-    try:
-        ch = load_charter(a.charter)
-        if a.gm:
-            ch["gm"] = a.gm
-        if a.dice_bot:
-            ch["dice_authors"] = a.dice_bot
-        transcript = load_transcript(a.transcript)
-        ledger = load_ledger(a.ledger)
-    except (OSError, ValueError, json.JSONDecodeError) as e:
-        print(json.dumps({"error": str(e)}), file=sys.stderr)
-        return 2
-    findings, code = check(transcript, ch, ledger)
-    print(json.dumps({"charter_version": ch.get("charter_version"),
-                      "messages": len(transcript),
-                      "findings": findings,
-                      "counts": {r: sum(1 for f in findings if f["rule"] == r)
-                                 for r in sorted({f["rule"] for f in findings})}},
-                     indent=1))
-    return code
+        return _print_invalid([
+            issue("input.path_required", "/transcript",
+                  "run requires a transcript path")
+        ])
+    result = evaluate_paths(
+        a.transcript, charter_path=a.charter, ledger_path=a.ledger,
+        gm=a.gm, dice_authors=a.dice_bot, mode="closed")
+    print(json.dumps(result.to_dict(), indent=1))
+    return result.exit_code
 
 
 if __name__ == "__main__":

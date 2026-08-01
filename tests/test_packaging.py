@@ -27,7 +27,14 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 PKG = ROOT / "dmcheck"
 
 # Every non-.py file the package reads at runtime.
-RUNTIME_DATA = ["default_charter.json", "dm_core.md"]
+RUNTIME_DATA = [
+    "default_charter.json",
+    "charter.schema.json",
+    "transcript.schema.json",
+    "ledger.schema.json",
+    "evaluation-result.schema.json",
+    "dm_core.md",
+]
 
 
 def _package_data_entries():
@@ -54,11 +61,13 @@ def _build_wheel(outdir):
         [sys.executable, "-m", "build", "--wheel", "--no-isolation",
          "--outdir", str(wheelhouse)],
         [sys.executable, "-m", "build", "--wheel", "--outdir", str(wheelhouse)],
+        [sys.executable, "-m", "pip", "wheel", ".", "--no-deps",
+         "--no-build-isolation", "--wheel-dir", str(wheelhouse)],
     ]
     for cmd in attempts:
         proc = subprocess.run(cmd, cwd=src, capture_output=True, text=True)
         if proc.returncode == 0:
-            wheels = list(wheelhouse.glob("*.whl"))
+            wheels = list(wheelhouse.glob("dmcheck-*.whl"))
             if wheels:
                 return wheels[0]
     return None
@@ -105,6 +114,14 @@ class TestPackagingContract(unittest.TestCase):
         table. dmcheck's whole contract is legible verdicts."""
         src = (ROOT / "dmcheck" / "cli.py").read_text(encoding="utf-8")
         self.assertIn("packaging-incomplete", src)
+
+    def test_only_packaged_default_is_authoritative(self):
+        self.assertFalse((ROOT / "charters" / "default.json").exists())
+        from dmcheck.validation import canonical_charter_digest
+        value = json.loads((PKG / "default_charter.json").read_text(encoding="utf-8"))
+        self.assertEqual(value["charter_digest"],
+                         canonical_charter_digest(value))
+        self.assertEqual(value["schema_version"], "1.0")
 
 
 class TestInstalledArtifact(unittest.TestCase):
@@ -153,6 +170,26 @@ class TestInstalledArtifact(unittest.TestCase):
         self.assertTrue(core.is_file(), "DM-CORE.md was not written")
         self.assertTrue(core.read_text().strip(), "DM-CORE.md is empty")
         json.loads(proc.stdout)  # output stays machine-readable
+
+    def test_cold_installed_default_matches_checkout(self):
+        if not self.wheel:
+            self.skipTest("wheel build unavailable (needs `build`+`setuptools`)")
+        venv = pathlib.Path(self._tmp) / "parity-venv"
+        subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
+        win = sysconfig.get_platform().startswith("win")
+        bindir = venv / ("Scripts" if win else "bin")
+        pip = bindir / ("pip.exe" if win else "pip")
+        dmcheck = bindir / ("dmcheck.exe" if win else "dmcheck")
+        subprocess.run([str(pip), "install", "-q", str(self.wheel)], check=True)
+        elsewhere = pathlib.Path(self._tmp) / "parity-elsewhere"
+        elsewhere.mkdir(exist_ok=True)
+        proc = subprocess.run([str(dmcheck), "charter"], cwd=elsewhere,
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        installed = json.loads(proc.stdout)
+        checkout = json.loads((PKG / "default_charter.json").read_text(
+            encoding="utf-8"))
+        self.assertEqual(installed, checkout)
 
 
 if __name__ == "__main__":

@@ -56,4 +56,4 @@ def test_r4_unconfigured_seat_falls_back_to_name():
 def test_lint_flags_mention_requirement_without_string(tmp_path):
     bad = dict(CH); bad["seats"] = {"Shalia": {"cue_requires_mention": True}}
     p = tmp_path / "c.json"; p.write_text(json.dumps(bad))
-    assert main(["lint-charter", str(p)]) == 1
+    assert main(["lint-charter", str(p)]) == 2

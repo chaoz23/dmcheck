@@ -1,7 +1,11 @@
 {
+  "$schema": "https://github.com/chaoz23/dmcheck/schemas/charter-1.0.json",
+  "schema_version": "1.0",
   "charter_version": "1.0",
+  "charter_digest": "sha256:b90d27a7624c345117a80028e4e07429e15e714698dbf3b1650a323b830c0c34",
   "description": "Default table charter, derived from the Agent Table Protocol. Every threshold is a table norm you may override.",
   "gm": [],
+  "players": [],
   "dice_authors": ["Dice Maiden", "Avrae", "dicecord"],
   "ooc_markers": ["[OOC]", "((", "//"],
   "hidden_terms": [],
@@ -9,7 +13,12 @@
     "answer_within_messages": 6,
     "roll_ack_within_messages": 4,
     "dead_air_seconds": 300,
-    "cue_within_gm_messages": 3
+    "cue_within_gm_messages": 3,
+    "quiet_table_max_messages": 3
   },
-  "rules_enabled": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
+  "rules_enabled": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"],
+  "seats": {},
+  "question_requires_gm_address": true,
+  "dead_air_requires_quiet_table": true,
+  "seat_quiet_gm_beats": 3
 }

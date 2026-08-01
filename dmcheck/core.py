@@ -12,9 +12,20 @@ Design contract (D1–D5):
 - No aggregate "DM score" exists anywhere in this package.
 """
 
-import json
-import os
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+
+from .validation import (
+    InputValidationError,
+    ValidationIssue,
+    issue,
+    load_charter,
+    load_ledger,
+    load_transcript,
+    normalize_charter,
+    normalize_ledger,
+    normalize_timestamp,
+    normalize_transcript,
+)
 
 RULES = {
     "R1": "unanswered-player: a player question to the table got no GM response within threshold",
@@ -28,80 +39,78 @@ RULES = {
 }
 
 
-# ---------- loading ----------
-
-def load_charter(path=None):
-    default = os.path.join(os.path.dirname(__file__), "..", "charters", "default.json")
-    packaged = os.path.join(os.path.dirname(__file__), "default_charter.json")
-    src = path or (default if os.path.exists(default) else packaged)
-    with open(src) as f:
-        ch = json.load(f)
-    ch.setdefault("thresholds", {})
-    ch.setdefault("gm", [])
-    ch.setdefault("dice_authors", [])
-    ch.setdefault("ooc_markers", [])
-    ch.setdefault("hidden_terms", [])
-    ch.setdefault("rules_enabled", list(RULES))
-    ch.setdefault("seats", {})
-    ch.setdefault("question_requires_gm_address", True)
-    ch.setdefault("dead_air_requires_quiet_table", True)
-    return ch
+# Loading and normalization are imported from ``validation``.  There is one
+# packaged default and one parser regardless of checkout, wheel, CLI, MCP, or
+# direct-library execution.
 
 
-def _parse_ts(v):
-    if v is None:
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    try:
-        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return None
+@dataclass
+class EvaluationResult:
+    """Typed repo-local evaluation outcome.
+
+    ``__iter__`` preserves the historical ``findings, code = check(...)``
+    adapter while direct callers can use ``status`` and ``to_dict()``.  Invalid
+    and incomplete evidence never enters ``findings`` and always exits 2.
+    """
+
+    status: str
+    mode: str
+    messages: int = 0
+    findings: list = field(default_factory=list)
+    errors: list = field(default_factory=list)
+    skipped_rules: list = field(default_factory=list)
+    eligible_rules: list = field(default_factory=list)
+    charter: dict = None
+
+    @property
+    def exit_code(self):
+        return {"clean": 0, "findings": 1,
+                "invalid": 2, "incomplete": 2}[self.status]
+
+    def __iter__(self):
+        yield self.findings
+        yield self.exit_code
+
+    def __len__(self):
+        return 2
+
+    def __getitem__(self, index):
+        return (self.findings, self.exit_code)[index]
+
+    def to_dict(self):
+        counts = {
+            rule: sum(1 for finding in self.findings
+                      if finding.get("rule") == rule)
+            for rule in sorted({finding.get("rule") for finding in self.findings
+                                if finding.get("rule")})
+        }
+        metadata = None
+        if self.charter is not None:
+            metadata = {
+                "schema_version": self.charter.get("schema_version"),
+                "charter_version": self.charter.get("charter_version"),
+                "digest": self.charter.get("charter_digest"),
+            }
+        return {
+            "result_schema_version": "1.0",
+            "status": self.status,
+            "exit_code": self.exit_code,
+            "mode": self.mode,
+            "messages": self.messages,
+            "findings": self.findings,
+            "counts": counts,
+            "errors": [error.to_dict() if isinstance(error, ValidationIssue)
+                       else error for error in self.errors],
+            "eligible_rules": list(self.eligible_rules),
+            "skipped_rules": list(self.skipped_rules),
+            "charter": metadata,
+        }
 
 
-def load_transcript(path):
-    """Accepts: JSONL of {ts, author, content} — or a JSON array (Discord-API
-    message shape: {timestamp, author:{username}, content}) in either order."""
-    with open(path) as f:
-        text = f.read().strip()
-    rows = []
-    if text.startswith("["):
-        raw = json.loads(text)
-        for m in raw:
-            author = m.get("author")
-            if isinstance(author, dict):
-                author = author.get("username")
-            rows.append({"ts": _parse_ts(m.get("ts") or m.get("timestamp")),
-                         "author": author, "content": m.get("content") or ""})
-    else:
-        for line in text.splitlines():
-            if not line.strip():
-                continue
-            m = json.loads(line)
-            rows.append({"ts": _parse_ts(m.get("ts")), "author": m.get("author"),
-                         "content": m.get("content") or ""})
-    rows = [r for r in rows if r["author"] is not None]
-    if len(rows) > 1 and rows[0]["ts"] and rows[-1]["ts"] and rows[0]["ts"] > rows[-1]["ts"]:
-        rows.reverse()  # newest-first exports → chronological
-    for i, r in enumerate(rows):
-        r["i"] = i
-    return rows
-
-
-def load_ledger(path):
-    """Optional engine ledger: JSONL of {ts?, type, actor?, text?}.
-    Recognized types: turn (actor's turn began), act (actor did a thing),
-    event (anything narratable)."""
-    if not path:
-        return []
-    rows = []
-    with open(path) as f:
-        for line in f:
-            if line.strip():
-                e = json.loads(line)
-                e["ts"] = _parse_ts(e.get("ts"))
-                rows.append(e)
-    return rows
+def invalid_result(issues, mode="closed", messages=0, charter=None):
+    """Build the same invalid envelope at any adapter boundary."""
+    return EvaluationResult("invalid", mode, messages=messages,
+                            errors=list(issues), charter=charter)
 
 
 # ---------- helpers ----------
@@ -151,7 +160,7 @@ def _word_in(term, text):
 
 # ---------- the rules ----------
 
-def check(transcript, charter, ledger=None, closed=True, now=None):
+def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
     ch = charter
     ledger = ledger or []
     T = transcript
@@ -159,10 +168,6 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
     findings = []
     enabled = set(ch.get("rules_enabled", list(RULES)))
     gm_idx = [r["i"] for r in T if _is_gm(r, ch)]
-    if not ch["gm"]:
-        return [{"error": "charter names no GM author — cannot referee; "
-                          "set charter.gm or pass --gm"}], 2
-
     # R1 unanswered-player: a non-GM, non-dice message containing a question,
     # with NO GM message in the next `answer_within_messages` messages.
     if "R1" in enabled:
@@ -221,7 +226,7 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
         last_gm_ts = last_gm["ts"]
         if last_gm_ts is not None:
             for e in ledger:
-                if e.get("type") in ("event", "act") and e.get("ts") \
+                if e.get("type") in ("event", "act") and e.get("ts") is not None \
                         and e["ts"] > last_gm_ts:
                     findings.append(_finding(
                         "R3", "ledger vs last GM message",
@@ -235,7 +240,8 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
         for e in ledger:
             if e.get("type") != "turn" or not e.get("actor") or e.get("ts") is None:
                 continue
-            gms_after = [r for r in T if _is_gm(r, ch) and r["ts"] and r["ts"] >= e["ts"]][:k]
+            gms_after = [r for r in T if _is_gm(r, ch)
+                         and r["ts"] is not None and r["ts"] >= e["ts"]][:k]
             # per-seat cue policy (v0.3): a seat behind a mention-gated
             # transport only RECEIVES a cue if the literal mention string is
             # present — name-in-prose is not deliverable to it. Without a
@@ -292,8 +298,11 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
         for r in T:
             if _is_gm(r, ch) or _is_dice(r, ch) or _is_ooc(r, ch) or r["ts"] is None:
                 continue
-            nxt = next((x for x in T[r["i"] + 1:] if _is_gm(x, ch) and x["ts"]), None)
-            gap = (nxt["ts"] - r["ts"]) if nxt else \
+            # The first subsequent GM beat bounds the wait.  If that beat has
+            # no timestamp, a later timestamped beat cannot safely stand in
+            # for it without risking a false accusation.
+            nxt = next((x for x in T[r["i"] + 1:] if _is_gm(x, ch)), None)
+            gap = (nxt["ts"] - r["ts"]) if nxt and nxt["ts"] is not None else \
                   ((now - r["ts"]) if (now is not None and not closed) else None)
             if gap is None or gap <= limit:
                 continue
@@ -302,7 +311,8 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
             if ch.get("dead_air_requires_quiet_table", True):
                 end_ts = nxt["ts"] if nxt else (now if now is not None else None)
                 between = [x for x in T[r["i"] + 1:]
-                           if x["ts"] and (end_ts is None or x["ts"] < end_ts)
+                           if x["ts"] is not None
+                           and (end_ts is None or x["ts"] < end_ts)
                            and not _is_gm(x, ch) and not _is_dice(x, ch)]
                 if len(between) >= th.get("quiet_table_max_messages", 3):
                     continue
@@ -328,3 +338,229 @@ def check(transcript, charter, ledger=None, closed=True, now=None):
                 {"open": [f["rule"] for f in open_tail]}))
 
     return findings, (1 if findings else 0)
+
+
+def _skip(rule, code, message):
+    return {"rule": rule, "code": code, "message": message}
+
+
+def _eligible_rules(transcript, charter, ledger, mode, now):
+    enabled = charter["rules_enabled"]
+    eligible = []
+    skipped = []
+    has_messages = bool(transcript)
+    player_messages = [row for row in transcript
+                       if row["content"].strip()
+                       and not _is_gm(row, charter)
+                       and not _is_dice(row, charter)
+                       and not _is_ooc(row, charter)]
+    dice_messages = [row for row in transcript
+                     if row["content"].strip() and _is_dice(row, charter)]
+    gm_messages = [row for row in transcript if _is_gm(row, charter)]
+    gm_timestamps = [row["ts"] for row in gm_messages
+                     if row["ts"] is not None]
+
+    for rule in enabled:
+        reason = None
+        if rule == "R8":
+            continue
+        if rule == "R1":
+            if player_messages:
+                eligible.append(rule)
+            else:
+                reason = _skip(rule, "player_messages.unavailable",
+                               "R1 requires at least one player message")
+        elif rule == "R2":
+            if dice_messages:
+                eligible.append(rule)
+            else:
+                reason = _skip(rule, "dice_messages.unavailable",
+                               "R2 requires at least one configured dice-author message")
+        elif rule == "R3":
+            events = [event for event in ledger
+                      if event.get("type") in ("event", "act")
+                      and event.get("ts") is not None]
+            last_gm = gm_messages[-1] if gm_messages else None
+            if events and last_gm is not None and last_gm["ts"] is not None:
+                eligible.append(rule)
+            else:
+                reason = _skip(rule, "timestamped_ledger.unavailable",
+                               "R3 requires a timestamped event and GM message")
+        elif rule == "R4":
+            turns = [event for event in ledger if event.get("type") == "turn"
+                     and event.get("actor") and event.get("ts") is not None]
+            compatible = any(gm["ts"] >= turn["ts"]
+                             for turn in turns for gm in gm_messages
+                             if gm["ts"] is not None)
+            if compatible and len(gm_timestamps) == len(gm_messages):
+                eligible.append(rule)
+            else:
+                reason = _skip(rule, "timestamped_turn.unavailable",
+                               "R4 requires a timestamped turn and GM message")
+        elif rule == "R5":
+            current = None
+            compatible = False
+            for event in ledger:
+                if event.get("type") == "turn" and event.get("actor"):
+                    current = event["actor"]
+                elif (event.get("type") == "act" and event.get("actor")
+                      and current is not None):
+                    compatible = True
+                    break
+            if compatible:
+                eligible.append(rule)
+            else:
+                reason = _skip(rule, "turn_ledger.unavailable",
+                               "R5 requires actor-bearing turn and act events")
+        elif rule == "R6":
+            if has_messages and charter["hidden_terms"]:
+                eligible.append(rule)
+            else:
+                reason = _skip(rule, "hidden_terms.unavailable",
+                               "R6 requires messages and configured hidden terms")
+        elif rule == "R7":
+            compatible = False
+            for row in transcript:
+                if (row["ts"] is None or _is_gm(row, charter)
+                        or _is_dice(row, charter) or _is_ooc(row, charter)):
+                    continue
+                next_gm = next((candidate for candidate
+                                in transcript[row["i"] + 1:]
+                                if _is_gm(candidate, charter)), None)
+                if ((next_gm is not None and next_gm["ts"] is not None)
+                        or (next_gm is None and mode == "live"
+                            and now is not None)):
+                    compatible = True
+                    break
+            if compatible:
+                eligible.append(rule)
+            else:
+                reason = _skip(rule, "timestamped_messages.unavailable",
+                               "R7 requires timestamped player and GM/live-clock evidence")
+        if reason is not None:
+            skipped.append(reason)
+    if "R8" in enabled:
+        bases = {"R1", "R2", "R3"}.intersection(eligible)
+        if mode == "closed" and bases:
+            eligible.append("R8")
+        else:
+            skipped.append(_skip(
+                "R8", "closed_tail.unavailable",
+                "R8 requires closed mode and an eligible R1, R2, or R3"))
+    return eligible, skipped
+
+
+def evaluate(transcript, charter, ledger=None, mode="closed", now=None):
+    """Normalize, validate, establish evidence eligibility, then run rules.
+
+    This is the canonical direct API.  It never raises for caller-controlled
+    data: invalid input and insufficient evidence are explicit status values.
+    """
+    if mode not in ("closed", "live"):
+        return invalid_result([
+            issue("evaluation.mode", "/mode", "mode must be 'closed' or 'live'")
+        ], mode=None)
+
+    problems = []
+    normalized_charter = None
+    normalized_transcript = None
+    normalized_ledger = None
+    normalized_now = None
+    try:
+        normalized_charter = normalize_charter(charter, require_gm=True)
+    except InputValidationError as exc:
+        problems.extend(exc.issues)
+    try:
+        normalized_transcript = normalize_transcript(transcript)
+    except InputValidationError as exc:
+        problems.extend(exc.issues)
+    try:
+        normalized_ledger = normalize_ledger(ledger)
+    except InputValidationError as exc:
+        problems.extend(exc.issues)
+    if now is not None:
+        try:
+            normalized_now = normalize_timestamp(now)
+        except InputValidationError as exc:
+            problems.extend(exc.issues)
+    if problems:
+        return invalid_result(problems, mode=mode,
+                              messages=len(normalized_transcript or []),
+                              charter=normalized_charter)
+
+    incomplete = []
+    if not normalized_transcript:
+        incomplete.append(issue("transcript.empty", "/transcript",
+                                "no usable transcript messages were supplied"))
+    elif not any(row["content"].strip() for row in normalized_transcript):
+        incomplete.append(issue(
+            "transcript.no_effective_content", "/transcript",
+            "the transcript contains no nonempty message content"))
+    elif not any(_is_gm(row, normalized_charter)
+                 for row in normalized_transcript):
+        incomplete.append(issue(
+            "evidence.gm_unobserved", "/transcript",
+            "none of the configured GM authors appears in the transcript"))
+
+    eligible, skipped = _eligible_rules(
+        normalized_transcript, normalized_charter, normalized_ledger,
+        mode, normalized_now)
+    if not eligible:
+        incomplete.append(issue(
+            "evidence.no_eligible_rules", "/rules_enabled",
+            "no enabled rule has the evidence required to evaluate"))
+    if incomplete:
+        return EvaluationResult(
+            "incomplete", mode, messages=len(normalized_transcript),
+            errors=incomplete, skipped_rules=skipped,
+            eligible_rules=eligible, charter=normalized_charter)
+
+    try:
+        effective_charter = dict(normalized_charter)
+        effective_charter["rules_enabled"] = list(eligible)
+        findings, _ = _run_rules(
+            normalized_transcript, effective_charter, normalized_ledger,
+            closed=(mode == "closed"), now=normalized_now)
+    except Exception:  # fail closed at the public boundary; never leak a traceback
+        return invalid_result([
+            issue("evaluation.failed", "/evaluation",
+                  "evaluation could not complete for the supplied input")
+        ], mode=mode, messages=len(normalized_transcript),
+                              charter=normalized_charter)
+    return EvaluationResult(
+        "findings" if findings else "clean", mode,
+        messages=len(normalized_transcript), findings=findings,
+        skipped_rules=skipped, eligible_rules=eligible,
+        charter=normalized_charter)
+
+
+def check(transcript, charter, ledger=None, closed=True, now=None, mode=None):
+    """Backward-compatible adapter around :func:`evaluate`.
+
+    New callers should pass ``mode='closed'`` or ``mode='live'`` explicitly.
+    Existing callers using ``closed=`` still receive an iterable typed result.
+    """
+    if mode is None:
+        if not isinstance(closed, bool):
+            return invalid_result([
+                issue("evaluation.mode", "/closed", "closed must be a boolean")
+            ])
+        mode = "closed" if closed else "live"
+    return evaluate(transcript, charter, ledger, mode=mode, now=now)
+
+
+def evaluate_paths(transcript_path, charter_path=None, ledger_path=None,
+                   gm=None, dice_authors=None, mode="closed", now=None):
+    """Canonical file adapter shared by CLI and MCP."""
+    if mode not in ("closed", "live"):
+        return invalid_result([
+            issue("evaluation.mode", "/mode", "mode must be 'closed' or 'live'")
+        ], mode=None)
+    try:
+        charter = load_charter(charter_path, gm=gm,
+                               dice_authors=dice_authors)
+        transcript = load_transcript(transcript_path)
+        ledger = load_ledger(ledger_path)
+    except InputValidationError as exc:
+        return invalid_result(exc.issues, mode=mode)
+    return evaluate(transcript, charter, ledger, mode=mode, now=now)

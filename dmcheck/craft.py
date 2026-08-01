@@ -2,9 +2,11 @@
 defects, NEVER a score. Envelope measured over 134h of two professional DMs;
 categorical detectors born from a live second-agent test (2026-07-27) where
 the rate meter was structurally blind to all of them. Advisory only."""
-import json
 import re
 import statistics as st
+
+from .validation import (InputValidationError, issue, normalize_beats,
+                         normalize_transcript)
 
 ENV = {"median_words": (14, 17), "long40": (.12, .19), "question": (.175, .20),
        "roll": (.05, .09), "npc_voice": (.16, .22)}
@@ -135,11 +137,108 @@ def rule_checks(beats, pc_names=()):
             "contract": "advisory rule checks (protocol 1a/1b/11a/11b) - review items, no score"}
 
 
-def report(beats, scene="SOCIAL", pc_names=()):
+def _report_normalized(beats, scene="SOCIAL", pc_names=()):
     hd = [{"beat": i, "defects": d} for i, b in enumerate(beats)
           if (d := hard_defects(b, pc_names))]
-    return {"beats": len(beats), "rates": {k: round(v, 3) for k, v in rates(beats).items()},
+    return {"result_schema_version": "1.0", "operation": "craft",
+            "status": "advisory", "exit_code": 0, "authoritative": False,
+            "beats": len(beats),
+            "errors": [],
+            "rates": {k: round(v, 3) for k, v in rates(beats).items()},
             "envelope": ENV, "attention": attention(beats, scene),
             "hard_defects": hd,
             "rule_checks": rule_checks(beats, pc_names),
             "contract": "advisory statistics only; nothing here aggregates into a single number"}
+
+
+def _craft_failure(status, problems, beats=0):
+    return {
+        "result_schema_version": "1.0",
+        "operation": "craft",
+        "status": status,
+        "exit_code": 2,
+        "authoritative": False,
+        "beats": beats,
+        "errors": [problem.to_dict() for problem in problems],
+        "rates": {},
+        "envelope": ENV,
+        "attention": None,
+        "hard_defects": [],
+        "rule_checks": {"combat_onsets": 0, "damage_beats": 0,
+                        "findings": [],
+                        "contract": "not evaluated: input is unusable"},
+        "contract": "non-authoritative: craft input was not evaluated",
+    }
+
+
+def failure(problems, status="invalid"):
+    """Public adapter for parse/transport failures before craft evaluation."""
+    return _craft_failure(status, problems)
+
+
+def _names(values, pointer):
+    problems = []
+    if not isinstance(values, (list, tuple)):
+        return [], [issue("craft.type", pointer,
+                          "%s must be an array of nonempty strings" %
+                          pointer.rsplit("/", 1)[-1])]
+    normalized = []
+    seen = set()
+    for index, value in enumerate(values):
+        item_pointer = "%s/%d" % (pointer, index)
+        if not isinstance(value, str):
+            problems.append(issue("craft.name_type", item_pointer,
+                                  "name must be a string"))
+        elif not value.strip():
+            problems.append(issue("craft.name_empty", item_pointer,
+                                  "name must be nonempty"))
+        elif value.casefold() in seen:
+            problems.append(issue("craft.name_duplicate", item_pointer,
+                                  "name must not be duplicated"))
+        else:
+            seen.add(value.casefold())
+            normalized.append(value)
+    return normalized, problems
+
+
+def evaluate(raw, scene="SOCIAL", pc_names=(), gm_authors=("GM",)):
+    """Typed craft adapter for beat arrays and transcript message arrays."""
+    problems = []
+    if not isinstance(scene, str) or scene.upper() not in SALIENCE:
+        problems.append(issue("craft.scene", "/scene",
+                              "scene must be COMBAT, SOCIAL, or EXPLORATION"))
+        normalized_scene = "SOCIAL"
+    else:
+        normalized_scene = scene.upper()
+    pcs, pc_problems = _names(pc_names, "/pc_names")
+    gms, gm_problems = _names(gm_authors, "/gm")
+    problems.extend(pc_problems)
+    problems.extend(gm_problems)
+
+    beats = []
+    try:
+        if isinstance(raw, list) and (not raw or
+                                     all(isinstance(value, str) for value in raw)):
+            beats = normalize_beats(raw)
+        else:
+            messages = normalize_transcript(raw)
+            if not gms:
+                problems.append(issue("craft.gm.empty", "/gm",
+                                      "at least one GM author is required"))
+            beats = [message["content"] for message in messages
+                     if message["author"] in gms and message["content"].strip()]
+    except InputValidationError as exc:
+        problems.extend(exc.issues)
+    if problems:
+        return _craft_failure("invalid", problems, beats=len(beats))
+    if not beats:
+        return _craft_failure("incomplete", [
+            issue("craft.no_effective_gm_beats", "/beats",
+                  "no nonempty GM beats were available to evaluate")
+        ])
+    return _report_normalized(beats, normalized_scene, tuple(pcs))
+
+
+def report(beats, scene="SOCIAL", pc_names=()):
+    """Backward-compatible direct API with fail-closed validation."""
+    return evaluate(beats, scene=scene, pc_names=pc_names)
