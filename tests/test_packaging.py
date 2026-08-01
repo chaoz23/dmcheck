@@ -191,6 +191,56 @@ class TestInstalledArtifact(unittest.TestCase):
             encoding="utf-8"))
         self.assertEqual(installed, checkout)
 
+    def test_cold_installed_server_json_entrypoint_discovers(self):
+        """Install the candidate wheel, then launch the console script named
+        by server.json from a directory that contains no source checkout.
+
+        Public registry resolution is a separate post-publication gate: 0.6.0
+        is deliberately not available from PyPI while this test runs.
+        """
+        if not self.wheel:
+            self.skipTest("wheel build unavailable (needs `build`+`setuptools`)")
+        manifest = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+        package = manifest["packages"][0]
+        executable_name = [
+            argument["value"] for argument in package["runtimeArguments"]
+            if argument.get("type") == "positional"
+        ][-1]
+
+        venv = pathlib.Path(self._tmp) / "mcp-venv"
+        subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
+        win = sysconfig.get_platform().startswith("win")
+        bindir = venv / ("Scripts" if win else "bin")
+        pip = bindir / ("pip.exe" if win else "pip")
+        executable = bindir / (executable_name + (".exe" if win else ""))
+        subprocess.run([str(pip), "install", "-q", str(self.wheel)], check=True)
+
+        elsewhere = pathlib.Path(self._tmp) / "mcp-elsewhere"
+        elsewhere.mkdir(exist_ok=True)
+        request = {
+            "jsonrpc": "2.0", "id": "cold", "method": "server/discover",
+            "params": {"_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+                "io.modelcontextprotocol/clientInfo": {
+                    "name": "cold-smoke", "version": "1.0.0"
+                },
+            }},
+        }
+        proc = subprocess.run(
+            [str(executable)], cwd=elsewhere,
+            input=json.dumps(request) + "\n", capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+        response = json.loads(proc.stdout)
+        self.assertEqual(response["id"], "cold")
+        self.assertEqual(response["result"]["supportedVersions"],
+                         ["2026-07-28"])
+        self.assertEqual(
+            response["result"]["_meta"][
+                "io.modelcontextprotocol/serverInfo"]["version"],
+            manifest["version"])
+
 
 if __name__ == "__main__":
     unittest.main()

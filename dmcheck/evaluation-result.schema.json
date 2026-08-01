@@ -3,6 +3,7 @@
   "$id": "https://github.com/chaoz23/dmcheck/schemas/evaluation-result-1.0.json",
   "title": "dmcheck EvaluationResult",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "result_schema_version", "status", "exit_code", "mode", "messages",
     "findings", "counts", "errors", "eligible_rules", "skipped_rules",
@@ -14,30 +15,175 @@
     "exit_code": {"enum": [0, 1, 2]},
     "mode": {"enum": ["closed", "live", null]},
     "messages": {"type": "integer", "minimum": 0},
-    "findings": {"type": "array", "items": {"type": "object"}},
-    "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/finding"}
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "R1": {"type": "integer", "minimum": 1},
+        "R2": {"type": "integer", "minimum": 1},
+        "R3": {"type": "integer", "minimum": 1},
+        "R4": {"type": "integer", "minimum": 1},
+        "R5": {"type": "integer", "minimum": 1},
+        "R6": {"type": "integer", "minimum": 1},
+        "R7": {"type": "integer", "minimum": 1},
+        "R8": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
     "errors": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/problem"}
+    },
+    "eligible_rules": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/rule"}
+    },
+    "skipped_rules": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["code", "pointer", "message"],
+        "additionalProperties": false,
+        "required": ["rule", "code", "message"],
         "properties": {
-          "code": {"type": "string"},
-          "pointer": {"type": "string"},
-          "message": {"type": "string"}
+          "rule": {"$ref": "#/$defs/rule"},
+          "code": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
         }
       }
     },
-    "eligible_rules": {"type": "array", "items": {"type": "string"}},
-    "skipped_rules": {"type": "array", "items": {"type": "object"}},
     "charter": {
       "oneOf": [
         {"type": "null"},
         {
           "type": "object",
-          "required": ["schema_version", "charter_version", "digest"]
+          "additionalProperties": false,
+          "required": ["schema_version", "charter_version", "digest"],
+          "properties": {
+            "schema_version": {"type": "string", "minLength": 1},
+            "charter_version": {"type": "string", "minLength": 1},
+            "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
         }
       ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "clean"}}},
+      "then": {
+        "properties": {
+          "exit_code": {"const": 0},
+          "findings": {"maxItems": 0},
+          "errors": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "findings"}}},
+      "then": {
+        "properties": {
+          "exit_code": {"const": 1},
+          "findings": {"minItems": 1},
+          "errors": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["invalid", "incomplete"]}}},
+      "then": {
+        "properties": {
+          "exit_code": {"const": 2},
+          "findings": {"maxItems": 0},
+          "errors": {"minItems": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "rule": {"enum": ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]},
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "pointer", "message"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "pointer": {"type": "string"},
+        "message": {"type": "string", "minLength": 1}
+      }
+    },
+    "excerptEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "author", "content"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "author": {"type": "string", "minLength": 1},
+        "content": {"type": "string", "maxLength": 140}
+      }
+    },
+    "ledgerTextEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ledger_ts", "text"],
+      "properties": {
+        "ledger_ts": {"type": "number", "minimum": 0},
+        "text": {"type": "string", "maxLength": 140}
+      }
+    },
+    "cueEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "ledger_ts"],
+      "properties": {
+        "actor": {"type": "string", "minLength": 1},
+        "ledger_ts": {"type": "number", "minimum": 0}
+      }
+    },
+    "turnEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "turn_of", "text"],
+      "properties": {
+        "actor": {"type": "string", "minLength": 1},
+        "turn_of": {"type": "string", "minLength": 1},
+        "text": {"type": "string", "maxLength": 140}
+      }
+    },
+    "openEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["open"],
+      "properties": {
+        "open": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"enum": ["R1", "R2", "R3"]}
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule", "summary", "charter", "detail", "evidence"],
+      "properties": {
+        "rule": {"$ref": "#/$defs/rule"},
+        "summary": {"type": "string", "minLength": 1},
+        "charter": {"type": "string", "minLength": 1},
+        "detail": {"type": "string", "minLength": 1},
+        "evidence": {
+          "oneOf": [
+            {"$ref": "#/$defs/excerptEvidence"},
+            {"$ref": "#/$defs/ledgerTextEvidence"},
+            {"$ref": "#/$defs/cueEvidence"},
+            {"$ref": "#/$defs/turnEvidence"},
+            {"$ref": "#/$defs/openEvidence"}
+          ]
+        }
+      }
     }
   }
 }

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dmcheck"
-version = "0.5.5"
-description = "Deterministic conduct verdicts for live tabletop sessions — CI for running a game. Findings cite the table charter; ambiguity is never promoted to a definite accusation."
+dynamic = ["version"]
+description = "Deterministic conduct verdicts for live tabletop sessions — CI for running a game. Findings cite the table charter; ambiguity produces silence, never accusations."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
@@ -26,6 +26,9 @@ markers = [
 
 [tool.setuptools]
 packages = ["dmcheck"]
+
+[tool.setuptools.dynamic]
+version = {attr = "dmcheck._version.__version__"}
 
 [tool.setuptools.package-data]
 # EVERY non-.py file dmcheck reads at runtime must be listed here, or it is

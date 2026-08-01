@@ -399,7 +399,7 @@ class TestTransportParity(unittest.TestCase):
         mcp_result = mcp_call("run", {
             "transcript_path": str(transcript),
             "charter_path": str(table_charter),
-        })
+        }, allowed_roots=[str(self.root)])
 
         expected_codes = {problem.code for problem in file_result.errors}
         self.assertEqual(expected_codes, {"transcript.content_type"})
@@ -469,7 +469,8 @@ class TestTransportParity(unittest.TestCase):
         array = evaluate_paths(str(array_path), str(table_charter)).to_dict()
         jsonl = evaluate_paths(str(jsonl_path), str(table_charter)).to_dict()
         mcp = mcp_call("run", {"transcript_path": str(array_path),
-                               "charter_path": str(table_charter)})
+                               "charter_path": str(table_charter)},
+                       allowed_roots=[str(self.root)])
         for result in (array, jsonl, mcp):
             self.assertEqual(result["status"], direct["status"])
             self.assertEqual(result["messages"], direct["messages"])
@@ -508,7 +509,7 @@ class TestTransportParity(unittest.TestCase):
             "charter_path": str(table_charter),
             "gm": ["GM"],
             "dice_authors": ["DiceBot"],
-        })
+        }, allowed_roots=[str(self.root)])
         self.assertEqual(expected.status, "clean")
         self.assertEqual((cli_code, json.loads(stdout)["status"]),
                          (0, "clean"))

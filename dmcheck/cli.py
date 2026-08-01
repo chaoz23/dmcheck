@@ -16,7 +16,7 @@ import json
 import math
 import sys
 
-from . import RULES, evaluate_paths, load_charter
+from . import RULES, __version__, evaluate_paths, load_charter
 from .core import invalid_result, public_charter, redact_output
 from .validation import (InputValidationError, issue, load_craft_input,
                          normalize_charter)
@@ -47,6 +47,21 @@ SCHEMA = {
                "craft_status": ["advisory", "invalid", "incomplete"],
                "schemas": ["charter.schema.json", "transcript.schema.json",
                            "ledger.schema.json", "evaluation-result.schema.json"]},
+    "mcp": {
+        "release_status": "unreleased %s candidate" % __version__,
+        "protocol": "2026-07-28",
+        "transport": "stdio",
+        "lifecycle": "stateless batch only",
+        "tools": ["run", "rules"],
+        "path_policy": (
+            "denied unless explicitly allowlisted and secure component-relative "
+            "no-follow opens are available"),
+        "text_content": (
+            "security-redacted projection; canonical structuredContent remains "
+            "untrusted quoted data"),
+        "tool_rate_limit": "120/minute, burst 32, process-local",
+        "not_exposed": ["watch", "craft", "tasks", "resources", "prompts"],
+    },
 }
 
 
@@ -74,7 +89,8 @@ def main(argv=None):
     ap.add_argument("--notify-cmd", help="watch: shell command fired per source-observed OPEN finding (finding JSON on stdin)")
     ap.add_argument("--evaluation-ts", type=float,
                     help="run: explicit Unix-seconds evaluation horizon")
-    ap.add_argument("--version", action="version", version="dmcheck 0.5.4")
+    ap.add_argument("--version", action="version",
+                    version="dmcheck %s" % __version__)
     a = ap.parse_args(argv)
 
     if a.schema:
