@@ -309,10 +309,13 @@ def _audience_state(row, transcript, ch):
 
 ROLL_RESULT_TYPES = {"roll.result", "dice.result", "vtt.roll_result",
                      "roll_result", "dice_roll_result"}
-ROLL_NON_RESULT_TYPES = {
+STATUS_EVENT_TYPES = {
     "bot.status", "bot.error", "dice.status", "dice.error", "roll.error",
+    "status", "system", "error",
+}
+ROLL_NON_RESULT_TYPES = STATUS_EVENT_TYPES | {
     "roll.request", "dice.request", "vtt.roll_request", "roll_request",
-    "dice_roll_request", "status", "system", "error",
+    "dice_roll_request",
 }
 BOT_NON_RESULT = re.compile(
     r"(?:\b(?:error|invalid|usage|help|offline|online|ready|joined|rate.?limit|"
@@ -338,6 +341,20 @@ def _roll_result_state(row, ch):
     if ROLL_RESULT.search(row.get("content") or ""):
         return True, "inferred"
     return False, None
+
+
+def _correlates_response(row, obligation_id):
+    """An exact reference on typed status/error output is not an answer."""
+    event_type = str(row.get("event_type") or "").casefold()
+    return event_type not in STATUS_EVENT_TYPES and _correlates(
+        row, obligation_id)
+
+
+def _correlates_narration(row, obligation_id):
+    """Roll requests and status/error output are not narration evidence."""
+    event_type = str(row.get("event_type") or "").casefold()
+    return event_type not in ROLL_NON_RESULT_TYPES and _correlates(
+        row, obligation_id)
 
 
 def _effective_policy(rule, ch, finding):
@@ -460,7 +477,8 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                 continue
             # The threshold decides when the obligation becomes overdue; a
             # later explicit response still heals its current OPEN state.
-            correlated = any(_is_gm(x, ch) and _correlates(x, obligation_id)
+            correlated = any(_is_gm(x, ch)
+                             and _correlates_response(x, obligation_id)
                              for x in after)
             if correlated or not complete:
                 continue
@@ -514,7 +532,7 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
             if not ((window and complete) or tail_is_end):
                 continue
             obligation_id = _identity(r)
-            if any(_is_gm(x, ch) and _correlates(x, obligation_id)
+            if any(_is_gm(x, ch) and _correlates_narration(x, obligation_id)
                    for x in after):
                 continue
             gm_present = any(_is_gm(x, ch) for x in after)
@@ -562,7 +580,8 @@ def _run_rules(transcript, charter, ledger=None, closed=True, now=None):
                 and (e.get("ts") is None or r.get("ts") is None
                      or r["ts"] >= e["ts"])
             ]
-            if any(_correlates(r, obligation_id) for r in later_gms):
+            if any(_correlates_narration(r, obligation_id)
+                   for r in later_gms):
                 continue
             explicit = obligation_id is not None
             if explicit:

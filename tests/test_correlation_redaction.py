@@ -130,6 +130,17 @@ class CorrelationTests(unittest.TestCase):
         )
         self.assertEqual(check(transcript, charter("R1", "R8")), ([], 0))
 
+    def test_correlated_status_is_not_a_question_answer(self):
+        transcript = rows(
+            {"ts": 1, "id": "q-open", "author": "A", "content": "DC?",
+             "audience": "GM"},
+            {"ts": 2, "author": "GM", "content": "Bot online",
+             "event_type": "bot.status", "correlation_id": "q-open"},
+        )
+        findings, code = check(transcript, charter("R1"))
+        self.assertEqual(code, 1)
+        self.assertEqual(findings[0]["evidence"]["obligation_id"], "q-open")
+
     def test_text_only_question_preserves_d1_when_response_is_ambiguous(self):
         transcript = rows(
             {"ts": 1, "author": "A", "content": "GM, what is the DC?"},
@@ -203,6 +214,19 @@ class CorrelationTests(unittest.TestCase):
         )
         self.assertEqual(check(transcript, charter("R2", "R8")), ([], 0))
 
+    def test_correlated_status_or_request_is_not_roll_narration(self):
+        for event_type in ("bot.status", "bot.error", "roll.request"):
+            transcript = rows(
+                {"ts": 1, "author": "DiceBot", "content": "A rolls 1d20 = 19",
+                 "event_type": "roll.result", "roll_id": "roll-open"},
+                {"ts": 2, "author": "GM", "content": "Still processing",
+                 "event_type": event_type, "roll_id": "roll-open"},
+            )
+            findings, code = check(transcript, charter("R2"))
+            self.assertEqual(code, 1, event_type)
+            self.assertEqual(findings[0]["evidence"]["obligation_id"],
+                             "roll-open")
+
     def test_mislabeled_bot_error_is_not_a_roll_result(self):
         transcript = rows(
             {"ts": 1, "author": "DiceBot", "content": "Error: try again",
@@ -222,6 +246,17 @@ class CorrelationTests(unittest.TestCase):
 
         transcript[1]["correlation_id"] = "evt-1"
         self.assertEqual(check(transcript, charter("R3"), ledger), ([], 0))
+
+    def test_correlated_status_is_not_engine_event_narration(self):
+        ledger = [{"ts": 2, "type": "event", "id": "evt-1",
+                   "text": "door opens"}]
+        transcript = rows(
+            {"ts": 3, "author": "GM", "content": "Bot online",
+             "event_type": "bot.status", "correlation_id": "evt-1"},
+        )
+        findings, code = check(transcript, charter("R3"), ledger)
+        self.assertEqual(code, 1)
+        self.assertEqual(findings[0]["evidence"]["event_id"], "evt-1")
 
     def test_r8_uses_current_open_state_not_transcript_quartile(self):
         transcript = rows(
