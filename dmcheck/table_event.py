@@ -381,6 +381,11 @@ def load_table_events(path):
             common["source_id"] = source_id
         if kind == "message.observed":
             row = dict(common, content=payload["content"], event_type=kind)
+            if payload["content_redacted"]:
+                projection.blockers.append(issue(
+                    "table_event.content_redacted",
+                    "/events/%s/payload/content" % event["event_id"],
+                    "message content was redacted and cannot support a complete conduct evaluation"))
             if event["correlation_ids"]:
                 row["correlation_id"] = list(event["correlation_ids"])
             projection.transcript.append(row)

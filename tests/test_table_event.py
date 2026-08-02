@@ -97,6 +97,16 @@ def test_transport_gap_is_incomplete_never_false_clean(tmp_path):
     assert "table_event.transport_gap" in error_codes(result)
 
 
+def test_redacted_message_is_incomplete_never_false_clean(tmp_path):
+    item = event(1, "message.observed",
+                 {"content": "", "content_redacted": True},
+                 actor="rogue-brae", role="player")
+    result = evaluate_table_event_path(write_events(tmp_path, [item]),
+                                       gm=["gm-dan"])
+    assert result.status == "incomplete"
+    assert "table_event.content_redacted" in error_codes(result)
+
+
 def test_unknown_schema_is_structured_incomplete(tmp_path):
     item = event(1, "message.observed",
                  {"content": "hello", "content_redacted": False})
