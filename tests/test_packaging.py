@@ -264,6 +264,49 @@ class TestBuiltArtifacts(unittest.TestCase):
             (PKG / "default_charter.json").read_text(encoding="utf-8"))))
         self.assertEqual(installed, checkout)
 
+    def test_cold_installed_wheel_runs_table_event_adapter(self):
+        """The wheel, not the checkout, must expose the fail-closed adapter."""
+        venv = pathlib.Path(self._tmp) / "event-venv"
+        subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
+        win = sysconfig.get_platform().startswith("win")
+        bindir = venv / ("Scripts" if win else "bin")
+        pip = bindir / ("pip.exe" if win else "pip")
+        dmcheck = bindir / ("dmcheck.exe" if win else "dmcheck")
+        subprocess.run([str(pip), "install", "-q", str(self.wheel)], check=True)
+        elsewhere = pathlib.Path(self._tmp) / "event-elsewhere"
+        elsewhere.mkdir(exist_ok=True)
+        event = {
+            "schema_version": "table.event/1.0", "event_id": "evt-gap",
+            "campaign_id": "campaign", "session_id": "session",
+            "session_sequence": 1,
+            "source": {"kind": "fixture", "instance": "cold-wheel",
+                       "native_id": "1", "sequence": 1,
+                       "attestation": "self_attested"},
+            "occurred_at": "2026-08-01T19:00:00Z",
+            "recorded_at": "2026-08-01T19:00:00Z",
+            "principal": {"id": "transport", "actor_id": None,
+                          "controller_id": None, "role": "system"},
+            "event_type": "transport.gap",
+            "payload": {"expected_sequence": 7, "observed_sequence": 8,
+                        "recoverable": False},
+            "correlation_ids": [], "causation_id": None,
+            "audience": ["operator"], "visibility": "system",
+            "sensitivity": "normal", "provenance": "observed",
+            "integrity": {"predecessor_digest": None, "event_digest": None,
+                          "checkpoint": "same_writer"},
+        }
+        stream = elsewhere / "golden-gap.jsonl"
+        stream.write_text(json.dumps(event) + "\n", encoding="utf-8")
+        proc = subprocess.run(
+            [str(dmcheck), "run-events", str(stream), "--gm", "gm-dan"],
+            cwd=elsewhere, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(result["status"], "incomplete")
+        self.assertIn("table_event.transport_gap",
+                      {item["code"] for item in result["errors"]})
+        self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+
     def test_cold_installed_server_json_entrypoint_discovers(self):
         """Install the candidate wheel, then launch the console script named
         by server.json from a directory that contains no source checkout.

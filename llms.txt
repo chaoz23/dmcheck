@@ -9,7 +9,7 @@ legality. Ambiguity is silent or explicitly marked as a low-confidence
 advisory, never promoted to a definite accusation. Preserve source message/event IDs, audience, and correlation IDs:
 unrelated GM text cannot close a typed question, roll, or event. R6 secret
 values and matching excerpts are redacted from CLI/MCP/watch/hook output.
-Install: pip install dmcheck. CLI: dmcheck run|watch|craft|
+Install: pip install dmcheck. CLI: dmcheck run|run-events|watch|craft|
 init|explain|lint-charter. init --dm bootstraps a new DM (charter +
 session-zero + the nine measured defaults). craft = advisory attention lane:
 rates vs the professional envelope, one signal at a time, categorical defect
@@ -31,3 +31,6 @@ docs/MCP.md.
 Findings have stable finding_id values. watch follows transcript and ledger
 JSONL, commits newline-terminated rows, and emits source_health when coverage
 is incomplete; terminal output retains the typed fail-closed envelope.
+run-events strictly projects table.event/1.0 JSON/JSONL. Transport gaps,
+unknown versions/types, and zero-compatible streams are incomplete (exit 2),
+never clean. action.declared is not an authoritative engine resolution.

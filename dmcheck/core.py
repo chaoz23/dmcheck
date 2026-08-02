@@ -220,8 +220,13 @@ def _is_ooc(r, ch):
 
 
 def _excerpt(r):
-    return {"index": r["i"], "ts": r.get("ts"), "author": r["author"],
-            "content": r["content"][:140]}
+    excerpt = {"index": r["i"], "ts": r.get("ts"), "author": r["author"],
+               "content": r["content"][:140]}
+    for key in ("id", "source_id", "correlation_id", "obligation_id",
+                "roll_id"):
+        if key in r:
+            excerpt[key] = r[key]
+    return excerpt
 
 
 RULES_LEX = None
@@ -910,6 +915,10 @@ def _eligible_rules(transcript, charter, ledger, mode, now):
                        and not _is_ooc(row, charter)]
     dice_messages = [row for row in transcript
                      if row["content"].strip() and _is_dice(row, charter)]
+    typed_player_rolls = [row for row in transcript
+                          if row["content"].strip()
+                          and not _is_gm(row, charter)
+                          and _roll_result_state(row, charter)[0]]
     gm_messages = [row for row in transcript if _is_gm(row, charter)]
     gm_timestamps = [row["ts"] for row in gm_messages
                      if row["ts"] is not None]
@@ -925,11 +934,11 @@ def _eligible_rules(transcript, charter, ledger, mode, now):
                 reason = _skip(rule, "player_messages.unavailable",
                                "R1 requires at least one player message")
         elif rule == "R2":
-            if dice_messages:
+            if dice_messages or typed_player_rolls:
                 eligible.append(rule)
             else:
                 reason = _skip(rule, "dice_messages.unavailable",
-                               "R2 requires at least one configured dice-author message")
+                               "R2 requires a typed result or configured dice-author roll")
         elif rule == "R3":
             events = [event for event in ledger
                       if event.get("type") in ("event", "act")

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-EXPECTED_TESTS = 182
+EXPECTED_TESTS = 195
 ROOT = Path(__file__).resolve().parent.parent
 
 

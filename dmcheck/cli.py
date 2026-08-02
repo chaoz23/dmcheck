@@ -16,7 +16,8 @@ import json
 import math
 import sys
 
-from . import RULES, __version__, evaluate_paths, load_charter
+from . import (RULES, __version__, evaluate_paths, evaluate_table_event_path,
+               load_charter)
 from .core import (invalid_result, public_charter, public_charter_digest,
                    redact_output)
 from .validation import (InputValidationError, issue, load_craft_input,
@@ -26,6 +27,7 @@ SCHEMA = {
     "name": "dmcheck",
     "commands": {
         "run": "check a transcript (+ optional --ledger) against a charter; findings as JSON",
+        "run-events": "check a table.event/1.0 JSONL stream; gaps and unsupported events fail closed",
         "rules": "list the rule set with one-line definitions",
         "charter": "print the effective charter with hidden values redacted; edit the source file to change protected terms",
         "craft": "attention lane: rate statistics vs the professional envelope, ONE attention signal, categorical defects (voiced-PC etc.) - advisory, never a score",
@@ -35,6 +37,7 @@ SCHEMA = {
         "explain": "one rule in depth: definition, charter knobs, origin story",
     },
     "transcript": "UTF-8 JSONL of {ts, author, content, id?, audience?, reply_to?, correlation_id?, roll_id?} OR a JSON array of Discord-API-shaped messages",
+    "table_event": "run-events accepts table.event/1.0 JSONL or a JSON array; contract gaps and unsupported variants return incomplete",
     "ledger": "optional JSONL of {ts, type: turn|act|event, id?, actor?, text?}; event IDs correlate narration; actor/turn order never establishes action legality",
     "charter": "schema-versioned JSON config; canonical packaged default is dmcheck/default_charter.json; charter.gm is REQUIRED",
     "authority": "dmcheck evaluates conduct/communication only; upstream authority and the DM/table decide action legality; srdcheck is advisory",
@@ -43,7 +46,8 @@ SCHEMA = {
     "evaluation_ts": "optional Unix-seconds horizon for exact replay of time-based findings",
     "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
     "result": {"schema_version": "1.0",
-               "evaluation_commands": ["run", "watch", "mcp.run", "direct.evaluate"],
+               "evaluation_commands": ["run", "run-events", "watch", "mcp.run",
+                                       "direct.evaluate", "direct.evaluate_table_event_path"],
                "status": ["clean", "findings", "invalid", "incomplete"],
                "craft_status": ["advisory", "invalid", "incomplete"],
                "schemas": ["charter.schema.json", "transcript.schema.json",
@@ -74,7 +78,7 @@ def _print_invalid(problems, mode="closed"):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="dmcheck", description=__doc__)
-    ap.add_argument("command", nargs="?", choices=["run", "rules", "charter", "init", "watch", "lint-charter", "explain", "craft"], default="run")
+    ap.add_argument("command", nargs="?", choices=["run", "run-events", "rules", "charter", "init", "watch", "lint-charter", "explain", "craft"], default="run")
     ap.add_argument("transcript", nargs="?")
     ap.add_argument("--charter", help="charter JSON (default: packaged default)")
     ap.add_argument("--ledger", help="optional engine-event ledger JSONL")
@@ -269,12 +273,22 @@ def main(argv=None):
     if not a.transcript:
         return _print_invalid([
             issue("input.path_required", "/transcript",
-                  "run requires a transcript path")
+                  "%s requires an input path" % a.command)
         ])
-    result = evaluate_paths(
-        a.transcript, charter_path=a.charter, ledger_path=a.ledger,
-        gm=a.gm, dice_authors=a.dice_bot, mode="closed",
-        now=a.evaluation_ts)
+    if a.command == "run-events":
+        if a.ledger is not None:
+            return _print_invalid([
+                issue("table_event.ledger_conflict", "/ledger",
+                      "run-events derives its ledger from the event stream; --ledger is not accepted")
+            ])
+        result = evaluate_table_event_path(
+            a.transcript, charter_path=a.charter, gm=a.gm,
+            dice_authors=a.dice_bot, mode="closed", now=a.evaluation_ts)
+    else:
+        result = evaluate_paths(
+            a.transcript, charter_path=a.charter, ledger_path=a.ledger,
+            gm=a.gm, dice_authors=a.dice_bot, mode="closed",
+            now=a.evaluation_ts)
     print(json.dumps(result.to_dict(), indent=1))
     return result.exit_code
 
