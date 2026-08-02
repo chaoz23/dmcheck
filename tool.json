@@ -6,6 +6,7 @@
   "commands": {
     "dmcheck run <transcript> --gm <name> [--charter f] [--ledger f] [--evaluation-ts n]": "referee or exactly replay the session; findings as JSON",
     "dmcheck run-events <events.jsonl> --gm <name> [--charter f] [--evaluation-ts n]": "project table.event/1.0 evidence; gaps and unsupported events return incomplete",
+    "dmcheck run-events <events.jsonl> --gm <name> --table-evaluation": "emit deterministic self-attested table.evaluation/1.0 with exact evidence references and coverage",
     "dmcheck watch <transcript> --gm <name> [--ledger f] [--follow]": "follow transcript and ledger JSONL; emit stable finding lifecycle and source-health events",
     "dmcheck rules": "the active rule set plus the retired R5 compatibility id, with definitions",
     "dmcheck --schema": "machine-readable I/O contract"

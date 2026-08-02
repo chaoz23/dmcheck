@@ -306,6 +306,16 @@ class TestBuiltArtifacts(unittest.TestCase):
         self.assertIn("table_event.transport_gap",
                       {item["code"] for item in result["errors"]})
         self.assertNotIn("Traceback", proc.stdout + proc.stderr)
+        contract_proc = subprocess.run(
+            [str(dmcheck), "run-events", str(stream), "--gm", "gm-dan",
+             "--table-evaluation"], cwd=elsewhere,
+            capture_output=True, text=True)
+        self.assertEqual(contract_proc.returncode, 2, contract_proc.stderr)
+        contract_result = json.loads(contract_proc.stdout)
+        self.assertEqual(contract_result["schema_version"],
+                         "table.evaluation/1.0")
+        self.assertEqual(contract_result["status"], "incomplete")
+        self.assertEqual(contract_result["authority_status"], "self_attested")
 
     def test_cold_installed_server_json_entrypoint_discovers(self):
         """Install the candidate wheel, then launch the console script named

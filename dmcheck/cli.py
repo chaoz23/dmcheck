@@ -17,7 +17,7 @@ import math
 import sys
 
 from . import (RULES, __version__, evaluate_paths, evaluate_table_event_path,
-               load_charter)
+               evaluate_table_event_contract_path, load_charter)
 from .core import (invalid_result, public_charter, public_charter_digest,
                    redact_output)
 from .validation import (InputValidationError, issue, load_craft_input,
@@ -38,6 +38,7 @@ SCHEMA = {
     },
     "transcript": "UTF-8 JSONL of {ts, author, content, id?, audience?, reply_to?, correlation_id?, roll_id?} OR a JSON array of Discord-API-shaped messages",
     "table_event": "run-events accepts table.event/1.0 JSONL or a JSON array; contract gaps and unsupported variants return incomplete",
+    "table_evaluation": "run-events --table-evaluation emits self-attested table.evaluation/1.0; host authority is external",
     "ledger": "optional JSONL of {ts, type: turn|act|event, id?, actor?, text?}; event IDs correlate narration; actor/turn order never establishes action legality",
     "charter": "schema-versioned JSON config; canonical packaged default is dmcheck/default_charter.json; charter.gm is REQUIRED",
     "authority": "dmcheck evaluates conduct/communication only; upstream authority and the DM/table decide action legality; srdcheck is advisory",
@@ -94,6 +95,8 @@ def main(argv=None):
     ap.add_argument("--notify-cmd", help="watch: shell command fired per source-observed OPEN finding (finding JSON on stdin)")
     ap.add_argument("--evaluation-ts", type=float,
                     help="run: explicit Unix-seconds evaluation horizon")
+    ap.add_argument("--table-evaluation", action="store_true",
+                    help="run-events: emit table.evaluation/1.0 instead of the native result")
     ap.add_argument("--version", action="version",
                     version="dmcheck %s" % __version__)
     a = ap.parse_args(argv)
@@ -101,6 +104,11 @@ def main(argv=None):
     if a.schema:
         print(json.dumps(SCHEMA, indent=1))
         return 0
+    if a.table_evaluation and a.command != "run-events":
+        return _print_invalid([
+            issue("table_evaluation.command", "/table-evaluation",
+                  "--table-evaluation is valid only with run-events")
+        ])
     if a.command == "rules":
         print(json.dumps(RULES, indent=1))
         return 0
@@ -281,6 +289,12 @@ def main(argv=None):
                 issue("table_event.ledger_conflict", "/ledger",
                       "run-events derives its ledger from the event stream; --ledger is not accepted")
             ])
+        if a.table_evaluation:
+            result = evaluate_table_event_contract_path(
+                a.transcript, charter_path=a.charter, gm=a.gm,
+                dice_authors=a.dice_bot, mode="closed", now=a.evaluation_ts)
+            print(json.dumps(result, indent=1))
+            return result["exit_code"]
         result = evaluate_table_event_path(
             a.transcript, charter_path=a.charter, gm=a.gm,
             dice_authors=a.dice_bot, mode="closed", now=a.evaluation_ts)

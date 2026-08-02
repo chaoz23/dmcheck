@@ -34,3 +34,6 @@ is incomplete; terminal output retains the typed fail-closed envelope.
 run-events strictly projects table.event/1.0 JSON/JSONL. Transport gaps,
 unknown versions/types, and zero-compatible streams are incomplete (exit 2),
 never clean. action.declared is not an authoritative engine resolution.
+run-events --table-evaluation emits deterministic table.evaluation/1.0 with
+exact evidence refs and coverage. It is always self_attested; only a protected
+external host may claim host_attested.
