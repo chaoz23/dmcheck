@@ -6,6 +6,7 @@ false clean verdicts.
 """
 
 from dataclasses import dataclass, field
+import hashlib
 import json
 import math
 import re
@@ -43,6 +44,9 @@ class TableEventProjection:
     blockers: list = field(default_factory=list)
     campaign_id: str = None
     session_id: str = None
+    input_digest: str = None
+    checked_through_event_id: str = None
+    subject_kind: str = "session"
 
 
 def _pointer_part(value):
@@ -330,6 +334,9 @@ def load_table_events(path):
         raise InputValidationError(problems)
 
     projection = TableEventProjection(event_count=len(events), blockers=blockers)
+    canonical = json.dumps(events, ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":"), allow_nan=False).encode("utf-8")
+    projection.input_digest = "sha256:" + hashlib.sha256(canonical).hexdigest()
     current = [(index, event) for index, event in enumerate(events)
                if isinstance(event, dict)
                and event.get("schema_version") == TABLE_EVENT_SCHEMA_VERSION]
@@ -338,6 +345,9 @@ def load_table_events(path):
     if current:
         projection.campaign_id = current[0][1]["campaign_id"]
         projection.session_id = current[0][1]["session_id"]
+        last_id = current[-1][1].get("event_id")
+        if isinstance(last_id, str) and last_id:
+            projection.checked_through_event_id = last_id
         seen = set()
         expected = 1
         sequence_problems = []
@@ -458,3 +468,75 @@ def evaluate_table_event_path(event_path, charter_path=None, gm=None,
             evaluation_ts=evaluation_ts)
     return evaluate(projection.transcript, charter, projection.ledger,
                     mode=mode, now=now)
+
+
+def _invalid_input_projection(path):
+    try:
+        with open(path, "rb") as stream:
+            raw = stream.read()
+    except (OSError, TypeError):
+        raw = b""
+    digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+    event_count = 0
+    session_id = None
+    checked = None
+    try:
+        events = _read_events(path)
+        event_count = len(events)
+        sessions = {item.get("session_id") for item in events
+                    if isinstance(item, dict)
+                    and isinstance(item.get("session_id"), str)
+                    and item.get("session_id")}
+        if len(sessions) == 1:
+            session_id = next(iter(sessions))
+        for item in reversed(events):
+            if isinstance(item, dict) and isinstance(item.get("event_id"), str):
+                checked = item["event_id"] or None
+                break
+    except InputValidationError:
+        pass
+    return TableEventProjection(
+        event_count=event_count, input_digest=digest,
+        session_id=session_id or ("input-" + digest.split(":", 1)[1][:24]),
+        checked_through_event_id=checked,
+        subject_kind="session" if session_id else "artifact")
+
+
+def evaluate_table_event_contract_path(event_path, charter_path=None, gm=None,
+                                       dice_authors=None, mode="closed", now=None):
+    """Evaluate a stream and return ``table.evaluation/1.0`` projection."""
+    from .table_evaluation import project_table_evaluation
+
+    if mode not in ("closed", "live"):
+        result = invalid_result([
+            issue("evaluation.mode", "/mode", "mode must be 'closed' or 'live'")
+        ], mode=None)
+        return project_table_evaluation(result, _invalid_input_projection(event_path))
+    charter = None
+    projection = None
+    problems = []
+    try:
+        charter = load_charter(charter_path, gm=gm, dice_authors=dice_authors)
+    except InputValidationError as exc:
+        problems.extend(exc.issues)
+    try:
+        projection = load_table_events(event_path)
+    except InputValidationError as exc:
+        problems.extend(exc.issues)
+    if projection is None:
+        projection = _invalid_input_projection(event_path)
+    if problems:
+        result = invalid_result(problems, mode=mode, charter=charter)
+    elif projection.blockers:
+        try:
+            evaluation_ts = normalize_timestamp(now) if now is not None else None
+            result = EvaluationResult(
+                "incomplete", mode, messages=len(projection.transcript),
+                errors=projection.blockers, charter=charter,
+                evaluation_ts=evaluation_ts)
+        except InputValidationError as exc:
+            result = invalid_result(exc.issues, mode=mode, charter=charter)
+    else:
+        result = evaluate(projection.transcript, charter, projection.ledger,
+                          mode=mode, now=now)
+    return project_table_evaluation(result, projection)

@@ -2,7 +2,10 @@
 
 import json
 
-from dmcheck import evaluate_table_event_path, load_table_events
+from dmcheck import (evaluate_table_event_contract_path,
+                     evaluate_table_event_path, load_charter,
+                     load_table_events, project_table_evaluation)
+from dmcheck.core import EvaluationResult
 from dmcheck.cli import main
 
 
@@ -209,3 +212,108 @@ def test_run_events_rejects_separate_ledger(tmp_path, capsys):
                  "--ledger", "events.jsonl"]) == 2
     output = json.loads(capsys.readouterr().out)
     assert output["errors"][0]["code"] == "table_event.ledger_conflict"
+
+
+def test_table_evaluation_projects_clean_and_finding_statuses(tmp_path):
+    clean_events = [
+        event(1, "roll.observed", {"total": 19, "roll_kind": "attack"},
+              actor="fighter-vesh", role="agent"),
+        event(2, "narration.obligation",
+              {"obligation_id": "consume-1", "kind": "consume_roll"},
+              actor=None, role="system", cause="evt-001"),
+        event(3, "narration.observed",
+              {"content": "It lands.",
+               "resolves_obligation_ids": ["consume-1"]}),
+    ]
+    clean = evaluate_table_event_contract_path(
+        write_events(tmp_path, clean_events), gm=["gm-dan"])
+    assert clean["schema_version"] == "table.evaluation/1.0"
+    assert clean["status"] == "checked_clean"
+    assert clean["coverage"]["complete"] is True
+    assert clean["authority_status"] == "self_attested"
+
+    finding_events = [
+        event(1, "narration.observed",
+              {"content": "You enter.", "resolves_obligation_ids": []}),
+        event(2, "message.observed",
+              {"content": "Are they safe?", "content_redacted": False},
+              actor="rogue-brae", role="player", audience=["gm-dan"]),
+    ]
+    finding = evaluate_table_event_contract_path(
+        write_events(tmp_path, finding_events), gm=["gm-dan"])
+    assert finding["status"] == "findings"
+    assert finding["findings"][0]["evidence_refs"][0] == "evt-002"
+
+
+def test_table_evaluation_gap_and_redaction_are_incomplete(tmp_path):
+    for payload, event_type, expected in (
+        ({"expected_sequence": 1, "observed_sequence": 2,
+          "recoverable": False}, "transport.gap", "table_event.transport_gap"),
+        ({"content": "", "content_redacted": True},
+         "message.observed", "table_event.content_redacted"),
+    ):
+        result = evaluate_table_event_contract_path(
+            write_events(tmp_path, [event(1, event_type, payload,
+                                               actor=None, role="system")]),
+            gm=["gm-dan"])
+        assert result["status"] == "incomplete"
+        assert result["exit_code"] == 2
+        assert result["coverage"]["complete"] is False
+        assert expected in {item["code"] for item in result["errors"]}
+
+
+def test_table_evaluation_distinguishes_unsupported_and_invalid(tmp_path):
+    future = event(1, "weather.changed", {"weather": "fog"})
+    unsupported = evaluate_table_event_contract_path(
+        write_events(tmp_path, [future]), gm=["gm-dan"])
+    assert unsupported["status"] == "unsupported"
+
+    malformed = event(1, "roll.observed", {"total": "bad", "roll_kind": ""})
+    invalid = evaluate_table_event_contract_path(
+        write_events(tmp_path, [malformed]), gm=["gm-dan"])
+    assert invalid["status"] == "invalid"
+    assert invalid["subject"]["kind"] == "session"
+
+
+def test_table_evaluation_is_deterministic(tmp_path):
+    path = write_events(tmp_path, [
+        event(1, "narration.observed",
+              {"content": "Begin.", "resolves_obligation_ids": []}),
+    ])
+    first = evaluate_table_event_contract_path(path, gm=["gm-dan"])
+    second = evaluate_table_event_contract_path(path, gm=["gm-dan"])
+    assert first == second
+    assert first["evaluation_id"].startswith("dmcheck-")
+    assert first["cursor"]["input_digest"].startswith("sha256:")
+
+
+def test_run_events_can_emit_table_evaluation(tmp_path, capsys):
+    path = write_events(tmp_path, [
+        event(1, "transport.gap",
+              {"expected_sequence": 1, "observed_sequence": 2,
+               "recoverable": False}, actor=None, role="system"),
+    ])
+    assert main(["run-events", str(path), "--gm", "gm-dan",
+                 "--table-evaluation"]) == 2
+    output = json.loads(capsys.readouterr().out)
+    assert output["schema_version"] == "table.evaluation/1.0"
+    assert output["status"] == "incomplete"
+
+
+def test_table_evaluation_missing_evidence_ref_fails_typed_not_traceback(tmp_path):
+    projection = load_table_events(write_events(tmp_path, [
+        event(1, "narration.observed",
+              {"content": "Begin.", "resolves_obligation_ids": []}),
+    ]))
+    native = EvaluationResult(
+        "findings", "closed", messages=1,
+        findings=[{"finding_id": "future-finding", "rule": "R1",
+                   "summary": "future finding", "severity": "finding",
+                   "evidence": {}, "effective_policy": {}}],
+        eligible_rules=["R1"], charter=load_charter(gm=["gm-dan"]))
+    projected = project_table_evaluation(native, projection)
+    assert projected["status"] == "internal_error"
+    assert projected["exit_code"] == 2
+    assert projected["findings"] == []
+    assert projected["errors"][0]["code"] == \
+        "table_evaluation.finding_evidence_missing"
