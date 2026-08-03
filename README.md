@@ -32,6 +32,18 @@ $ dmcheck run session.jsonl --gm "Greta"
 }
 ```
 
+Portfolio hosts that emit table-kit's versioned contract can use
+`dmcheck run-events session-events.jsonl --gm "gm-dan"` instead of
+pre-projecting a transcript. The strict adapter accepts a JSON array or JSONL
+of `table.event/1.0` objects and preserves event/correlation IDs in finding
+evidence. A declared action is not treated as an authoritative engine
+resolution, so legal Reactions and interrupts are not falsely accused.
+Transport gaps, unknown versions/types, and zero-compatible streams return
+typed `incomplete` status and exit 2; malformed v1 events return `invalid` and
+exit 2. Redacted message content is likewise incomplete because absence of
+prose cannot prove absence of a conduct obligation. This unreleased adapter is pinned to table-kit PR #11 and does not
+imply host attestation.
+
 Transcript formats: UTF-8 JSONL of `{ts, author, content}`, or a JSON array of Discord-API-shaped messages (`{timestamp, author: {username}, content}`) in chronological or reverse-chronological order. Authors and content are strings. A supplied timestamp must be a finite nonnegative epoch number or a timezone-aware ISO-8601 string; malformed timestamps are rejected rather than silently disabling time-based rules. Source adapters should preserve immutable `id`, `audience`, `reply_to`/`correlation_id`, and `roll_id` fields so dmcheck can prove which question, roll, or event a response closes; ordinary later GM chatter is not treated as an answer.
 
 ## The rule set (seven active rules; one retired compatibility id)

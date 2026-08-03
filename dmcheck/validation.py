@@ -578,10 +578,15 @@ def normalize_transcript(raw):
             for key, value in optional.items():
                 if value is None:
                     continue
+                list_reference = key in {
+                    "reply_to", "correlation_id", "obligation_id", "roll_id"
+                }
                 valid = isinstance(value, bool) if key == "is_bot" else (
                     isinstance(value, str) or
                     (key == "audience" and isinstance(value, list)
-                     and all(isinstance(item, str) for item in value)))
+                     and all(isinstance(item, str) for item in value)) or
+                    (list_reference and isinstance(value, list) and value
+                     and all(isinstance(item, str) and item for item in value)))
                 if not valid:
                     problems.append(issue(
                         "transcript.optional_type", pointer + "/" + key,
