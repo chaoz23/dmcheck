@@ -2,6 +2,8 @@
 
 **Deterministic conduct verdicts for live tabletop sessions — CI for running a game.**
 
+**Agents start here → [SKILL.md](SKILL.md)** — when to call this, worked examples, MUST/MUST NOTs. Family contract: [FAMILY.md](https://github.com/chaoz23/srdcheck/blob/main/FAMILY.md).
+
 Feed it a session transcript (and optionally an engine event ledger) plus a **table charter**, and it returns named findings — the player whose question was never answered, the dice roll nobody acknowledged, the turn that began without anyone being told, the spoiler that leaked into the channel, the five-minute dead air. Every finding cites the charter rule it violates, with the evidence attached.
 
 > **Cold-boot probe (2026-07-24):** a fresh agent session given only this repo URL installed and refereed a session in **2 commands**, verified all three exit-code legs against the docs, and confirmed the no-false-accusation contract held (a consumed roll produced silence). Its friction notes shipped as 0.1.1 (`--dice-bot`, `dmcheck charter`).
