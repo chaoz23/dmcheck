@@ -58,11 +58,40 @@ class TestMessySession(unittest.TestCase):
 
 class TestGuards(unittest.TestCase):
     def test_no_gm_declared_is_unusable(self):
+        """check() raises — it never returns a finding without a 'rule' key."""
         ch = load_charter(CH)
         ch["gm"] = []
-        findings, code = check(load_transcript(os.path.join(FIX, "clean-session.jsonl")), ch)
-        self.assertEqual(code, 2)
-        self.assertIn("error", findings[0])
+        with self.assertRaises(ValueError):
+            check(load_transcript(os.path.join(FIX, "clean-session.jsonl")), ch)
+
+    def test_cli_no_gm_is_exit_2_not_traceback(self):
+        """The 0.5.5 regression class: `dmcheck run <transcript>` with the
+        packaged default charter (no GM) must exit 2 with a JSON error on
+        stderr — never a KeyError traceback from the counts summary."""
+        import subprocess
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, %r); from dmcheck.cli import main; "
+             "sys.argv = ['dmcheck', 'run', %r]; sys.exit(main())"
+             % (os.path.join(os.path.dirname(__file__), ".."),
+                os.path.join(FIX, "clean-session.jsonl"))],
+            capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        err = json.loads(r.stderr.strip().splitlines()[-1])
+        self.assertIn("no GM author", err["error"])
+
+    def test_watch_no_gm_is_exit_2(self):
+        import subprocess
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, %r); from dmcheck.cli import main; "
+             "sys.argv = ['dmcheck', 'watch', %r]; sys.exit(main())"
+             % (os.path.join(os.path.dirname(__file__), ".."),
+                os.path.join(FIX, "clean-session.jsonl"))],
+            capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
 
 
 if __name__ == "__main__":

@@ -207,10 +207,10 @@ def main(argv=None):
             ch["dice_authors"] = a.dice_bot
         transcript = load_transcript(a.transcript)
         ledger = load_ledger(a.ledger)
+        findings, code = check(transcript, ch, ledger)
     except (OSError, ValueError, json.JSONDecodeError) as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         return 2
-    findings, code = check(transcript, ch, ledger)
     print(json.dumps({"charter_version": ch.get("charter_version"),
                       "messages": len(transcript),
                       "findings": findings,

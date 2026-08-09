@@ -112,6 +112,10 @@ def watch_main(a):
         ch["gm"] = a.gm
     if a.dice_bot:
         ch["dice_authors"] = a.dice_bot
+    if not ch.get("gm"):
+        print(json.dumps({"error": "charter names no GM author — cannot referee; "
+                                   "set charter.gm or pass --gm"}), file=sys.stderr)
+        return 2
     ledger = load_ledger(a.ledger)
     w = Watcher(ch, ledger, notify_cmd=a.notify_cmd,
                 craft=getattr(a, "craft", False), scene=getattr(a, "scene", "SOCIAL"),
