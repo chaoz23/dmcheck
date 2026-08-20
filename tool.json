@@ -1,5 +1,6 @@
 {
   "name": "dmcheck",
+  "family_class": "verdict",
   "version": "0.6.0",
   "description": "Deterministic conduct verdicts for live tabletop sessions. Input: a strict UTF-8 transcript with optional source identity/correlation, an optional engine ledger, and a versioned table charter. Output: a typed EvaluationResult whose findings carry stable identity, effective policy, provenance, and redacted evidence. Ambiguity is never promoted to a definite accusation; unusable evidence fails closed.",
   "install": "UNRELEASED 0.6.0 candidate: install this checkout with `pip install .`; use `pip install dmcheck` only after 0.6.0 is published",
