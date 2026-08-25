@@ -33,11 +33,13 @@ deterministic: same transcript, same findings, every time.
 ## Exit codes ARE the verdict
 
 `0` = clean (silence) · `1` = findings · `2` = unusable input/charter (the
-honest lane — fix the input, don't retry blind). **Every envelope — clean,
-findings, and the honest lane — prints JSON on `stdout`**, never a traceback.
-`stderr` carries only argparse usage errors, which also exit 2 but emit no
-JSON. So: exit 2 with an envelope on stdout is the honest lane; exit 2 with
-empty stdout means the call was malformed — fix it and retry. Read stdout.
+honest lane — fix the input, don't retry blind) · `3` = usage error (you
+called it wrong; fix the call and retry). **Every envelope — clean, findings,
+and the honest lane — prints JSON on `stdout`**, never a traceback. `stderr`
+carries only the exit-3 usage errors, which emit no JSON.
+
+Exit 2 and exit 3 are disjoint on purpose: 2 is a verdict you route to a
+human, 3 is a mistake you fix yourself. Read stdout for the verdict.
 
 ## Invocation
 

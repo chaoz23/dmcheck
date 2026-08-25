@@ -77,8 +77,25 @@ def _print_invalid(problems, mode="closed"):
     return result.exit_code
 
 
+class _UsageExitsThree(argparse.ArgumentParser):
+    """Usage errors exit 3, not argparse's default 2.
+
+    FAMILY.md clause 1: exit 2 is the honest lane -- a first-class
+    cannot-adjudicate verdict that a consuming agent routes to a human WITHOUT
+    retrying. A malformed invocation is the opposite: the caller should fix the
+    call and retry. Sharing one code made the two indistinguishable except by
+    whether stdout happened to carry JSON, so an agent escalated its own bad
+    calls to a human as if they were rulings. srdcheck's exit 3 is the family
+    precedent. See #15.
+    """
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        self.exit(3, f"{self.prog}: error: {message}\n")
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="dmcheck", description=__doc__)
+    ap = _UsageExitsThree(prog="dmcheck", description=__doc__)
     ap.add_argument("command", nargs="?", choices=["run", "run-events", "rules", "charter", "init", "watch", "lint-charter", "explain", "craft"], default="run")
     ap.add_argument("transcript", nargs="?")
     ap.add_argument("--charter", help="charter JSON (default: packaged default)")

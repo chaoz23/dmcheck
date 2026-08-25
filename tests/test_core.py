@@ -60,6 +60,33 @@ class TestMessySession(unittest.TestCase):
         self.assertEqual(self.code, 1)
 
 
+class TestUsageErrorsAreDisjointFromTheHonestLane(unittest.TestCase):
+    """FAMILY.md clause 1: exit 2 is the honest lane, a cannot-adjudicate
+    verdict a consuming agent routes to a human WITHOUT retrying. A malformed
+    invocation is the opposite -- fix the call and retry. They must not share
+    an exit code, or an agent escalates its own bad calls as if they were
+    rulings. srdcheck's exit 3 is the family precedent. See #15."""
+
+    def _code(self, argv):
+        from contextlib import redirect_stderr, redirect_stdout
+        import io
+        from dmcheck.cli import main as cli_main
+        with redirect_stderr(io.StringIO()), redirect_stdout(io.StringIO()):
+            try:
+                return cli_main(argv)
+            except SystemExit as exc:          # argparse exits rather than returns
+                return exc.code
+
+    def test_unknown_flag_is_a_usage_error(self):
+        self.assertEqual(self._code(["--zzz-not-a-real-flag"]), 3)
+
+    def test_unknown_command_is_a_usage_error(self):
+        self.assertEqual(self._code(["not-a-real-command"]), 3)
+
+    def test_unreadable_input_is_still_the_honest_lane(self):
+        self.assertEqual(self._code(["run", "/nonexistent/probe.json"]), 2)
+
+
 class TestGuards(unittest.TestCase):
     def test_no_gm_declared_is_unusable(self):
         ch = load_charter(CH)
