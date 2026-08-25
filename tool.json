@@ -13,7 +13,7 @@
     "dmcheck --schema": "machine-readable I/O contract"
   },
   "lifecycle": "Each finding has a deterministic finding_id. session_end returns the typed closed evaluation plus incomplete obligations and source coverage.",
-  "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable"},
+  "exit_codes": {"0": "clean", "1": "findings present", "2": "charter or input unusable (the honest lane; route to a human, do not retry)", "3": "usage error (fix the call and retry)"},
   "result_status": ["clean", "findings", "invalid", "incomplete"],
   "schemas": ["dmcheck/charter.schema.json", "dmcheck/transcript.schema.json", "dmcheck/ledger.schema.json", "dmcheck/evaluation-result.schema.json"],
   "mcp": {
