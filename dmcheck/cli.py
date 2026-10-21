@@ -36,6 +36,16 @@ SCHEMA = {
         "lint-charter": "validate a charter file (unknown keys, bad thresholds, seat config)",
         "explain": "one rule in depth: definition, charter knobs, origin story",
     },
+    "pipe": {
+        "invocation": "dmcheck --pipe",
+        "stdin": ("one JSON request per line: {transcript (required), charter, "
+                  "ledger, gm, dice_bot, evaluation_ts, command: run|run-events}. "
+                  "Keys are the run flags by name; unknown keys are refused."),
+        "stdout": "one verdict envelope per line, same shape as `run`",
+        "exit": ("the worst single line. A malformed request is a usage error "
+                 "(3); an unreadable transcript is still the honest lane (2). "
+                 "Empty stdin exits 3, never 0."),
+    },
     "transcript": "UTF-8 JSONL of {ts, author, content, id?, audience?, reply_to?, correlation_id?, roll_id?} OR a JSON array of Discord-API-shaped messages",
     "table_event": "run-events accepts table.event/1.0 JSONL or a JSON array; contract gaps and unsupported variants return incomplete",
     "table_evaluation": "run-events --table-evaluation emits self-attested table.evaluation/1.0; host authority is external",
@@ -71,10 +81,111 @@ SCHEMA = {
 }
 
 
+#: Request keys accepted by --pipe. Deliberately the same names as the run
+#: flags: a second vocabulary for the same concepts is how an agent ends up
+#: confidently wrong.
+_PIPE_KEYS = frozenset({
+    "command", "transcript", "charter", "ledger", "gm", "dice_bot",
+    "evaluation_ts",
+})
+
+
+def _pipe_once(req, lineno):
+    """Evaluate one pipe request. Returns (envelope_dict, exit_code)."""
+    if not isinstance(req, dict):
+        return _pipe_invalid(lineno, "pipe.request",
+                             "a request must be a JSON object")
+    unknown = sorted(set(req) - _PIPE_KEYS)
+    if unknown:
+        # Fail closed. Silently ignoring a mistyped key would return a verdict
+        # that answers a different question than the caller asked.
+        return _pipe_invalid(lineno, "pipe.unknown_key",
+                             "unknown request key(s): %s; accepted: %s"
+                             % (", ".join(unknown), ", ".join(sorted(_PIPE_KEYS))))
+    command = req.get("command", "run")
+    if command not in ("run", "run-events"):
+        return _pipe_invalid(lineno, "pipe.command",
+                             "command must be 'run' or 'run-events'")
+    if not req.get("transcript"):
+        return _pipe_invalid(lineno, "pipe.transcript",
+                             "transcript is required")
+    if command == "run-events" and req.get("ledger") is not None:
+        return _pipe_invalid(lineno, "pipe.ledger_conflict",
+                             "run-events derives its ledger from the event "
+                             "stream; ledger is not accepted")
+    gm = req.get("gm")
+    dice = req.get("dice_bot")
+    gm = [gm] if isinstance(gm, str) else gm
+    dice = [dice] if isinstance(dice, str) else dice
+    if command == "run-events":
+        result = evaluate_table_event_path(
+            req["transcript"], charter_path=req.get("charter"), gm=gm,
+            dice_authors=dice, mode="closed", now=req.get("evaluation_ts"))
+    else:
+        result = evaluate_paths(
+            req["transcript"], charter_path=req.get("charter"),
+            ledger_path=req.get("ledger"), gm=gm, dice_authors=dice,
+            mode="closed", now=req.get("evaluation_ts"))
+    return result.to_dict(), result.exit_code
+
+
+def _pipe_invalid(lineno, code, message):
+    result = invalid_result([issue(code, "/pipe/%d" % lineno, message)],
+                            mode="closed")
+    envelope = result.to_dict()
+    # A malformed request is a bad CALL, not a cannot-adjudicate verdict, so it
+    # carries the family's usage code rather than the invalid envelope's 2.
+    envelope["exit_code"] = _EXIT_USAGE
+    return envelope, _EXIT_USAGE
+
+
+def _pipe(stream=None):
+    """One JSON request per stdin line, one verdict envelope per stdout line.
+
+    FAMILY.md clause 7 defines --pipe as one-query-in / one-verdict-out.
+    dmcheck's query is "evaluate this transcript against this charter", so a
+    request is a JSON object mirroring the run flags.
+
+    Line-oriented and fail-soft per line: a bad request emits its own envelope
+    and the stream continues, because killing a batch of 200 evaluations over
+    one malformed line is worse than reporting it. The process exit is the
+    worst single line, matching charactercheck's --pipe.
+
+    Empty input exits 3 rather than 0. A silent success on no input hides the
+    far likelier cause -- the upstream command produced nothing.
+    """
+    worst = 0
+    seen = 0
+    for lineno, raw in enumerate((sys.stdin if stream is None else stream), 1):
+        raw = raw.strip()
+        if not raw:
+            continue
+        seen += 1
+        try:
+            req = json.loads(raw)
+        except ValueError as exc:
+            envelope, code = _pipe_invalid(lineno, "pipe.unreadable",
+                                           "line is not valid JSON: %s" % exc)
+        else:
+            envelope, code = _pipe_once(req, lineno)
+        print(json.dumps(envelope), flush=True)
+        worst = max(worst, code)
+    if not seen:
+        envelope, code = _pipe_invalid(0, "pipe.empty",
+                                       "--pipe read no requests from stdin")
+        print(json.dumps(envelope), flush=True)
+        return code
+    return worst
+
+
 def _print_invalid(problems, mode="closed"):
     result = invalid_result(problems, mode=mode)
     print(json.dumps(result.to_dict(), indent=1))
     return result.exit_code
+
+
+#: FAMILY.md v2.2: 3 is the usage-error code in every family member.
+_EXIT_USAGE = 3
 
 
 class _UsageExitsThree(argparse.ArgumentParser):
@@ -91,7 +202,7 @@ class _UsageExitsThree(argparse.ArgumentParser):
 
     def error(self, message):
         self.print_usage(sys.stderr)
-        self.exit(3, f"{self.prog}: error: {message}\n")
+        self.exit(_EXIT_USAGE, f"{self.prog}: error: {message}\n")
 
 
 def main(argv=None):
@@ -103,6 +214,9 @@ def main(argv=None):
     ap.add_argument("--gm", action="append", help="GM author name (repeatable; OVERRIDES charter.gm)")
     ap.add_argument("--dice-bot", action="append", help="dice-bot author name (repeatable; overrides charter.dice_authors)")
     ap.add_argument("--schema", action="store_true")
+    ap.add_argument("--pipe", action="store_true",
+                    help="read JSON evaluation requests from stdin, one per "
+                         "line; emit one verdict envelope per line")
     ap.add_argument("--follow", action="store_true", help="watch: keep tailing the file")
     ap.add_argument("--interval", type=float, default=5.0, help="watch: tick seconds")
     ap.add_argument("--craft", action="store_true", help="watch: also emit advisory craft_attention/craft_defect events")
@@ -121,6 +235,19 @@ def main(argv=None):
     if a.schema:
         print(json.dumps(SCHEMA, indent=1))
         return 0
+    if a.pipe:
+        # --pipe takes every input from stdin. Accepting a positional
+        # transcript here too would leave which one wins ambiguous, so
+        # fail closed instead of guessing.
+        conflicts = [name for name, value in (
+            ("transcript", a.transcript), ("--charter", a.charter),
+            ("--ledger", a.ledger), ("--gm", a.gm), ("--dice-bot", a.dice_bot),
+        ) if value]
+        if conflicts or a.command != "run":
+            ap.error("--pipe reads its requests from stdin; pass "
+                     "%s inside each request instead"
+                     % ", ".join(conflicts or [a.command]))
+        return _pipe()
     if a.table_evaluation and a.command != "run-events":
         return _print_invalid([
             issue("table_evaluation.command", "/table-evaluation",

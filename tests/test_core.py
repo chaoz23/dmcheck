@@ -60,6 +60,73 @@ class TestMessySession(unittest.TestCase):
         self.assertEqual(self.code, 1)
 
 
+class TestPipe(unittest.TestCase):
+    """FAMILY.md clause 7: --pipe is one-query-in / one-verdict-out.
+
+    The load-bearing property is that --pipe does not blur the exit lanes it
+    inherits: a malformed REQUEST is a usage error (3), while an unreadable
+    TRANSCRIPT is still the honest lane (2). Collapsing those would undo #15.
+    """
+
+    CLEAN = "tests/fixtures/clean-session.jsonl"
+    MESSY = "tests/fixtures/messy-session.jsonl"
+    CHARTER = "tests/fixtures/charter.json"
+
+    def _run(self, *lines):
+        import io
+        from contextlib import redirect_stdout
+        from dmcheck.cli import _pipe
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = _pipe(io.StringIO("".join(l + "\n" for l in lines)))
+        rows = [json.loads(l) for l in out.getvalue().splitlines() if l.strip()]
+        return code, rows
+
+    def _req(self, **kw):
+        kw.setdefault("charter", self.CHARTER)
+        return json.dumps(kw)
+
+    def test_one_request_one_verdict(self):
+        code, rows = self._run(self._req(transcript=self.CLEAN))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["status"], "clean")
+        self.assertEqual(code, 0)
+
+    def test_one_envelope_per_line_in_order(self):
+        code, rows = self._run(self._req(transcript=self.CLEAN),
+                               self._req(transcript=self.MESSY))
+        self.assertEqual([r["status"] for r in rows], ["clean", "findings"])
+        self.assertEqual(code, 1, "process exit is the worst single line")
+
+    def test_a_bad_line_does_not_kill_the_batch(self):
+        code, rows = self._run(self._req(transcript=self.CLEAN), "{oops")
+        self.assertEqual(len(rows), 2, "the good request still produced a verdict")
+        self.assertEqual(rows[0]["status"], "clean")
+        self.assertEqual(code, 3)
+
+    def test_malformed_request_is_a_usage_error(self):
+        for bad in (self._req(transcript=self.CLEAN, nonsense_key=1),
+                    self._req(),                      # no transcript
+                    self._req(transcript=self.CLEAN, command="frobnicate"),
+                    "[]",                             # not an object
+                    "{not json}"):
+            with self.subTest(bad=bad[:40]):
+                code, rows = self._run(bad)
+                self.assertEqual(code, 3)
+                self.assertEqual(rows[0]["exit_code"], 3)
+
+    def test_unreadable_transcript_is_still_the_honest_lane(self):
+        # The whole point of #15: 2 and 3 stay disjoint inside --pipe too.
+        code, rows = self._run(self._req(transcript="/nonexistent/probe.jsonl"))
+        self.assertEqual(code, 2)
+        self.assertEqual(rows[0]["status"], "invalid")
+
+    def test_empty_stdin_is_not_a_silent_success(self):
+        code, rows = self._run("", "   ")
+        self.assertEqual(code, 3)
+        self.assertEqual(len(rows), 1, "it says so rather than printing nothing")
+
+
 class TestUsageErrorsAreDisjointFromTheHonestLane(unittest.TestCase):
     """FAMILY.md clause 1: exit 2 is the honest lane, a cannot-adjudicate
     verdict a consuming agent routes to a human WITHOUT retrying. A malformed
