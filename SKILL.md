@@ -39,11 +39,21 @@ and the honest lane — prints JSON on `stdout`**, never a traceback. `stderr`
 carries only the exit-3 usage errors, which emit no JSON.
 
 Exit 2 and exit 3 are disjoint on purpose: 2 is a verdict you route to a
-human, 3 is a mistake you fix yourself. Read stdout for the verdict.
+human, 3 is a mistake you fix yourself.
+
+**Batch via `--pipe`:** one JSON request per stdin line — `{"transcript": ...,
+"charter": ..., "gm": [...], "command": "run"|"run-events"}`, keys named after
+the run flags — and one verdict envelope per line out. The process exit is the
+worst single line. A malformed request is a usage error (3); an unreadable
+transcript is still the honest lane (2). Empty stdin exits 3, not 0, because a
+silent success there hides the likelier cause: the upstream command emitted
+nothing. Read stdout for the verdict.
 
 ## Invocation
 
 ```bash
+dmcheck --pipe                              # batch: one JSON request per stdin line
+                                            #        one verdict envelope per line out
 dmcheck run session.jsonl --gm "Greta"                      # quick: default charter + GM override
 dmcheck run session.jsonl --charter our-table.json --ledger events.jsonl
 dmcheck run-events events.jsonl --gm "Greta"                # table.event/1.0 streams (fail closed)
